@@ -27,16 +27,14 @@
   function collectDom() {
     dom.app = requireElement("app");
     dom.gameShell = requireElement("game-shell");
-    dom.hpValue = requireElement("hp-value");
-    dom.hpMax = requireElement("hp-max");
-    dom.hpFill = requireElement("hp-fill");
-    dom.waveValue = requireElement("wave-value");
-    dom.goldValue = requireElement("gold-value");
+    dom.livesValue = requireElement("lives-value");
     dom.scoreValue = requireElement("score-value");
-    dom.bestWaveValue = requireElement("best-wave-value");
+    dom.bestScoreValue = requireElement("best-score-value");
+    dom.stageValue = requireElement("stage-value");
     dom.canvasWrap = requireElement("canvas-wrap");
     dom.canvas = requireElement("game-canvas");
-    dom.aimGuide = requireElement("aim-guide");
+    dom.controlGuide = requireElement("control-guide");
+    dom.launchButton = requireElement("launch-button");
     dom.pauseButton = requireElement("pause-button");
     dom.restartButton = requireElement("restart-button");
     dom.startOverlay = requireElement("start-overlay");
@@ -44,14 +42,16 @@
     dom.pauseOverlay = requireElement("pause-overlay");
     dom.resumeButton = requireElement("resume-button");
     dom.pauseRestartButton = requireElement("pause-restart-button");
+    dom.lifeLostOverlay = requireElement("life-lost-overlay");
+    dom.continueButton = requireElement("continue-button");
+    dom.stageClearOverlay = requireElement("stage-clear-overlay");
+    dom.stageClearScore = requireElement("stage-clear-score");
+    dom.nextStageButton = requireElement("next-stage-button");
+    dom.stageRestartButton = requireElement("stage-restart-button");
     dom.gameoverOverlay = requireElement("gameover-overlay");
-    dom.gameoverWave = requireElement("gameover-wave");
     dom.gameoverScore = requireElement("gameover-score");
     dom.gameoverBest = requireElement("gameover-best");
     dom.gameoverRestartButton = requireElement("gameover-restart-button");
-    dom.upgradeOverlay = requireElement("upgrade-overlay");
-    dom.upgradeTitle = requireElement("upgrade-title");
-    dom.upgradeOptions = requireElement("upgrade-options");
   }
 
   function setHidden(element, hidden) {
@@ -63,11 +63,7 @@
   }
 
   function formatInteger(value) {
-    if (typeof value !== "number" || !isFinite(value)) {
-      return "0";
-    }
-
-    return String(Math.max(0, Math.floor(value)));
+    return String(Math.max(0, Math.floor(typeof value === "number" && isFinite(value) ? value : 0)));
   }
 
   function getPointerPosition(event) {
@@ -82,96 +78,61 @@
     };
   }
 
-  function isActivePlayMode(mode) {
-    return mode === Data.MODES.READY || mode === Data.MODES.AIMING;
-  }
-
-  function canStartAim() {
-    var state = State.getRunState();
-
-    return activePointerId === null &&
-      isActivePlayMode(state.mode) &&
-      !state.flags.inputLocked &&
-      state.mode !== Data.MODES.PAUSED &&
-      state.mode !== Data.MODES.GAMEOVER;
-  }
-
-  function updateAimGuide(state) {
-    var text = "아래에서 드래그해 조준";
-
-    if (state.mode === Data.MODES.AIMING) {
-      text = state.aim.valid ? "놓으면 발사" : "더 멀리 드래그";
-    } else if (state.mode === Data.MODES.LAUNCHING || state.mode === Data.MODES.PLAYING) {
-      text = "공이 모두 돌아오기를 기다리는 중";
-    } else if (state.mode === Data.MODES.RESOLVING) {
-      text = "턴 정산 중";
-    } else if (state.mode === Data.MODES.PAUSED) {
-      text = "일시정지";
-    } else if (state.mode === Data.MODES.GAMEOVER) {
-      text = "게임 오버";
-    }
-
-    setText(dom.aimGuide, text);
-  }
-
   function updateHud(state) {
-    var hp = Math.max(0, Math.ceil(state.player.hp));
-    var maxHp = Math.max(1, Math.ceil(state.player.maxHp));
-    var hpRatio = Math.max(0, Math.min(1, hp / maxHp));
-
-    setText(dom.hpValue, hp);
-    setText(dom.hpMax, maxHp);
-    dom.hpFill.style.transform = "scaleX(" + hpRatio + ")";
-    setText(dom.waveValue, formatInteger(state.run.wave));
-    setText(dom.goldValue, formatInteger(state.run.gold));
-    setText(dom.scoreValue, formatInteger(state.run.score));
-    setText(dom.bestWaveValue, formatInteger(state.persistent.bestWave));
+    setText(dom.livesValue, formatInteger(state.lives));
+    setText(dom.scoreValue, formatInteger(state.score));
+    setText(dom.bestScoreValue, formatInteger(state.bestScore));
+    setText(dom.stageValue, formatInteger(state.stage));
     state.flags.needsHudUpdate = false;
   }
 
-  function updateGameoverPanel(state) {
-    setText(dom.gameoverWave, formatInteger(state.run.wave));
-    setText(dom.gameoverScore, formatInteger(state.run.score));
-    setText(dom.gameoverBest, formatInteger(state.persistent.bestWave));
+  function updateGuide(state) {
+    var text = "좌우로 움직이고 발사하세요.";
+
+    if (state.mode === Data.MODES.PLAYING) {
+      text = "공을 받아 벽돌을 깨세요.";
+    } else if (state.mode === Data.MODES.PAUSED) {
+      text = "일시정지 중입니다.";
+    } else if (state.mode === Data.MODES.LIFE_LOST) {
+      text = "계속을 누르면 공이 다시 배치됩니다.";
+    } else if (state.mode === Data.MODES.STAGE_CLEAR) {
+      text = "스테이지를 클리어했습니다.";
+    } else if (state.mode === Data.MODES.GAMEOVER) {
+      text = "게임오버입니다.";
+    }
+
+    setText(dom.controlGuide, text);
   }
 
   function hideAllOverlays() {
     setHidden(dom.startOverlay, true);
     setHidden(dom.pauseOverlay, true);
+    setHidden(dom.lifeLostOverlay, true);
+    setHidden(dom.stageClearOverlay, true);
     setHidden(dom.gameoverOverlay, true);
-    setHidden(dom.upgradeOverlay, true);
   }
 
   function syncOverlays(state) {
-    setHidden(dom.upgradeOverlay, true);
+    setHidden(dom.startOverlay, true);
+    setHidden(dom.pauseOverlay, state.mode !== Data.MODES.PAUSED);
+    setHidden(dom.lifeLostOverlay, state.mode !== Data.MODES.LIFE_LOST);
+    setHidden(dom.stageClearOverlay, state.mode !== Data.MODES.STAGE_CLEAR);
+    setHidden(dom.gameoverOverlay, state.mode !== Data.MODES.GAMEOVER);
 
-    if (state.mode === Data.MODES.PAUSED) {
-      setHidden(dom.startOverlay, true);
-      setHidden(dom.pauseOverlay, false);
-      setHidden(dom.gameoverOverlay, true);
-      return;
+    if (state.mode === Data.MODES.STAGE_CLEAR) {
+      setText(dom.stageClearScore, formatInteger(state.score));
     }
 
     if (state.mode === Data.MODES.GAMEOVER) {
-      updateGameoverPanel(state);
-      setHidden(dom.startOverlay, true);
-      setHidden(dom.pauseOverlay, true);
-      setHidden(dom.gameoverOverlay, false);
-      return;
+      setText(dom.gameoverScore, formatInteger(state.score));
+      setText(dom.gameoverBest, formatInteger(state.bestScore));
     }
-
-    setHidden(dom.pauseOverlay, true);
-    setHidden(dom.gameoverOverlay, true);
   }
 
   function syncButtons(state) {
-    var canPause = state.mode !== Data.MODES.PAUSED &&
-      state.mode !== Data.MODES.GAMEOVER &&
-      state.mode !== Data.MODES.BOOT;
-
-    dom.pauseButton.disabled = !canPause;
+    dom.launchButton.disabled = state.mode !== Data.MODES.READY;
+    dom.pauseButton.disabled = state.mode !== Data.MODES.READY && state.mode !== Data.MODES.PLAYING;
     dom.restartButton.disabled = false;
-    dom.startButton.disabled = false;
     dom.resumeButton.disabled = state.mode !== Data.MODES.PAUSED;
   }
 
@@ -179,7 +140,7 @@
     var runState = state || State.getRunState();
 
     updateHud(runState);
-    updateAimGuide(runState);
+    updateGuide(runState);
     syncOverlays(runState);
     syncButtons(runState);
 
@@ -187,46 +148,39 @@
   }
 
   function startGame() {
-    hideAllOverlays();
-
-    if (AbyssBreaker.Main && typeof AbyssBreaker.Main.restartGame === "function") {
-      AbyssBreaker.Main.restartGame();
-      return;
-    }
-
-    var state = State.restartRun();
-    Game.startRun(state);
-    sync(state);
-  }
-
-  function restartGame() {
     activePointerId = null;
 
     if (AbyssBreaker.Main && typeof AbyssBreaker.Main.restartGame === "function") {
       AbyssBreaker.Main.restartGame();
-      return;
+    } else {
+      Game.startRun(State.restartRun());
     }
 
-    var state = State.restartRun();
-    Game.startRun(state);
     hideAllOverlays();
-    sync(state);
+    sync(State.getRunState());
+  }
+
+  function restartGame() {
+    startGame();
+  }
+
+  function launch() {
+    if (Game.launchBall(State.getRunState())) {
+      hideAllOverlays();
+      sync(State.getRunState());
+    }
   }
 
   function pauseGame() {
     var state = State.getRunState();
 
-    if (state.mode === Data.MODES.PAUSED || state.mode === Data.MODES.GAMEOVER) {
+    if (state.mode !== Data.MODES.READY && state.mode !== Data.MODES.PLAYING) {
       return;
-    }
-
-    if (state.mode === Data.MODES.AIMING) {
-      Game.cancelAim(state);
     }
 
     activePointerId = null;
     State.setMode(Data.MODES.PAUSED);
-    sync(State.getRunState());
+    sync(state);
   }
 
   function resumeGame() {
@@ -236,33 +190,51 @@
       return;
     }
 
-    var nextMode = state.previousMode;
-
-    if (!nextMode || nextMode === Data.MODES.PAUSED || nextMode === Data.MODES.GAMEOVER || nextMode === Data.MODES.AIMING) {
-      nextMode = Data.MODES.READY;
-    }
-
+    var nextMode = state.previousMode === Data.MODES.PLAYING ? Data.MODES.PLAYING : Data.MODES.READY;
     State.setMode(nextMode);
 
     if (AbyssBreaker.Main && typeof AbyssBreaker.Main.resetFrameClock === "function") {
       AbyssBreaker.Main.resetFrameClock();
     }
 
+    sync(state);
+  }
+
+  function continueAfterLifeLost() {
+    if (Game.continueAfterLifeLost(State.getRunState())) {
+      hideAllOverlays();
+      sync(State.getRunState());
+    }
+  }
+
+  function nextStage() {
+    Game.nextStage(State.getRunState());
+    hideAllOverlays();
+    sync(State.getRunState());
+  }
+
+  function restartStage() {
+    Game.restartStage(State.getRunState());
+    hideAllOverlays();
     sync(State.getRunState());
   }
 
   function handlePointerDown(event) {
-    if (!canStartAim()) {
+    var state = State.getRunState();
+
+    if (state.mode !== Data.MODES.READY && state.mode !== Data.MODES.PLAYING) {
       return;
     }
 
     var position = getPointerPosition(event);
 
-    if (!Game.beginAim(position.x, position.y, State.getRunState())) {
-      return;
-    }
-
     activePointerId = event.pointerId;
+    state.input.pointerActive = true;
+    state.input.pointerId = event.pointerId;
+    state.input.pointerStartX = position.x;
+    state.input.pointerStartY = position.y;
+    state.input.pointerMoved = false;
+    Game.movePaddleTo(position.x, state);
 
     if (typeof dom.canvas.setPointerCapture === "function") {
       try {
@@ -273,40 +245,37 @@
     }
 
     event.preventDefault();
-    sync(State.getRunState());
   }
 
   function handlePointerMove(event) {
-    if (activePointerId !== event.pointerId) {
+    var state = State.getRunState();
+
+    if (event.pointerType === "mouse" && activePointerId === null && (state.mode === Data.MODES.READY || state.mode === Data.MODES.PLAYING)) {
+      Game.movePaddleTo(getPointerPosition(event).x, state);
       return;
     }
 
-    var state = State.getRunState();
-
-    if (state.mode !== Data.MODES.AIMING) {
-      activePointerId = null;
+    if (activePointerId !== event.pointerId) {
       return;
     }
 
     var position = getPointerPosition(event);
-    Game.updateAim(position.x, position.y, state);
-    event.preventDefault();
-    sync(state);
-  }
+    var dx = position.x - state.input.pointerStartX;
+    var dy = position.y - state.input.pointerStartY;
 
-  function finishPointer(event, shouldCommit) {
-    if (activePointerId !== event.pointerId) {
-      return;
+    if (Math.sqrt(dx * dx + dy * dy) > 8) {
+      state.input.pointerMoved = true;
     }
 
+    Game.movePaddleTo(position.x, state);
+    event.preventDefault();
+  }
+
+  function finishPointer(event) {
     var state = State.getRunState();
 
-    if (state.mode === Data.MODES.AIMING) {
-      if (shouldCommit && state.aim.valid) {
-        Game.commitAim(state);
-      } else {
-        Game.cancelAim(state);
-      }
+    if (activePointerId !== event.pointerId) {
+      return;
     }
 
     if (typeof dom.canvas.releasePointerCapture === "function") {
@@ -317,39 +286,47 @@
       }
     }
 
+    if (state.mode === Data.MODES.READY && !state.input.pointerMoved) {
+      launch();
+    }
+
+    state.input.pointerActive = false;
+    state.input.pointerId = null;
     activePointerId = null;
     event.preventDefault();
-    sync(State.getRunState());
-  }
-
-  function handlePointerUp(event) {
-    finishPointer(event, true);
   }
 
   function handlePointerCancel(event) {
-    finishPointer(event, false);
+    if (activePointerId !== event.pointerId) {
+      return;
+    }
+
+    var state = State.getRunState();
+    state.input.pointerActive = false;
+    state.input.pointerId = null;
+    activePointerId = null;
+    event.preventDefault();
   }
 
   function bindEvents() {
     dom.startButton.addEventListener("click", startGame);
+    dom.launchButton.addEventListener("click", launch);
     dom.pauseButton.addEventListener("click", pauseGame);
     dom.restartButton.addEventListener("click", restartGame);
     dom.resumeButton.addEventListener("click", resumeGame);
     dom.pauseRestartButton.addEventListener("click", restartGame);
+    dom.continueButton.addEventListener("click", continueAfterLifeLost);
+    dom.nextStageButton.addEventListener("click", nextStage);
+    dom.stageRestartButton.addEventListener("click", restartStage);
     dom.gameoverRestartButton.addEventListener("click", restartGame);
 
     dom.canvas.addEventListener("pointerdown", handlePointerDown, { passive: false });
     dom.canvas.addEventListener("pointermove", handlePointerMove, { passive: false });
-    global.addEventListener("pointerup", handlePointerUp, { passive: false });
+    global.addEventListener("pointerup", finishPointer, { passive: false });
     global.addEventListener("pointercancel", handlePointerCancel, { passive: false });
     global.addEventListener("blur", function () {
-      var state = State.getRunState();
-
-      if (state.mode === Data.MODES.AIMING) {
-        Game.cancelAim(state);
-        activePointerId = null;
-        sync(state);
-      }
+      activePointerId = null;
+      State.getRunState().input.pointerActive = false;
     });
   }
 
@@ -371,7 +348,6 @@
     dom: dom,
     sync: sync,
     updateHud: updateHud,
-    updateGameoverPanel: updateGameoverPanel,
     showStartOverlay: function () {
       setHidden(dom.startOverlay, false);
     },
