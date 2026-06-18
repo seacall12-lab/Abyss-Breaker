@@ -82,9 +82,11 @@
   function drawBackground(ctx, state) {
     var width = state.viewport.cssWidth;
     var height = state.viewport.cssHeight;
+    var stage = Game.getStageData ? Game.getStageData(state) : null;
+    var variant = stage ? stage.backgroundVariant : 0;
     var gradient = ctx.createLinearGradient(0, 0, 0, height);
 
-    gradient.addColorStop(0, "#071e25");
+    gradient.addColorStop(0, variant % 3 === 0 ? "#071e25" : (variant % 3 === 1 ? "#101b2b" : "#15172a"));
     gradient.addColorStop(0.42, "#0b1218");
     gradient.addColorStop(1, "#07090d");
     ctx.fillStyle = gradient;
@@ -109,7 +111,7 @@
 
   function drawBrick(ctx, brick) {
     var type = Data.BRICK_TYPES[brick.type] || Data.BRICK_TYPES.normal;
-    var hpRatio = clamp(brick.hp / Math.max(1, brick.maxHp), 0, 1);
+    var hpRatio = brick.destructible ? clamp(brick.hp / Math.max(1, brick.maxHp), 0, 1) : 1;
 
     ctx.save();
     ctx.globalAlpha = brick.alive ? 1 : 0.25;
@@ -126,11 +128,11 @@
     ctx.fillStyle = hpRatio > 0.5 ? "#e9fff5" : "#ffe27a";
     ctx.fillRect(brick.x, brick.y + brick.height - 5, brick.width * hpRatio, 5);
 
-    ctx.fillStyle = "#071016";
+    ctx.fillStyle = brick.type === "wall" ? "#f3f7ff" : "#071016";
     ctx.font = "900 13px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(Math.max(0, brick.hp)), brick.x + brick.width / 2, brick.y + brick.height / 2 - 1);
+    ctx.fillText(type.label || String(Math.max(0, brick.hp)), brick.x + brick.width / 2, brick.y + brick.height / 2 - 1);
     ctx.restore();
   }
 
@@ -179,6 +181,41 @@
     state.balls.forEach(function (ball) {
       drawBall(ctx, ball);
     });
+  }
+
+  function drawBoss(ctx, state) {
+    var boss = state.boss;
+
+    if (!boss || !boss.alive) {
+      return;
+    }
+
+    var hpRatio = clamp(boss.hp / Math.max(1, boss.maxHp), 0, 1);
+    var gradient = ctx.createLinearGradient(boss.x, boss.y, boss.x + boss.width, boss.y + boss.height);
+
+    gradient.addColorStop(0, boss.shieldActive ? "#65c8ff" : "#e65f4b");
+    gradient.addColorStop(1, boss.shieldActive ? "#d7f2ff" : "#f2c94c");
+
+    ctx.save();
+    ctx.beginPath();
+    roundedRect(ctx, boss.x, boss.y, boss.width, boss.height, 8);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.strokeStyle = boss.shieldActive ? "#d7f2ff" : "#ffe2a1";
+    ctx.lineWidth = boss.shieldActive ? 3 : 2;
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+    ctx.fillRect(boss.x + 8, boss.y + boss.height - 8, boss.width - 16, 4);
+    ctx.fillStyle = "#f3f7ff";
+    ctx.fillRect(boss.x + 8, boss.y + boss.height - 8, (boss.width - 16) * hpRatio, 4);
+
+    ctx.fillStyle = "#071016";
+    ctx.font = "900 12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(boss.shieldActive ? "SHIELD" : boss.name, boss.x + boss.width / 2, boss.y + boss.height / 2 - 2);
+    ctx.restore();
   }
 
   function drawItems(ctx, state) {
@@ -232,6 +269,32 @@
     });
   }
 
+  function drawEffects(ctx, state) {
+    state.effects.forEach(function (effect) {
+      var progress = clamp(effect.age / Math.max(0.01, effect.life), 0, 1);
+
+      ctx.save();
+      ctx.globalAlpha = 1 - progress;
+
+      if (effect.type === "line") {
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(effect.x1, effect.y1);
+        ctx.lineTo(effect.x2, effect.y2);
+        ctx.stroke();
+      } else if (effect.type === "ring") {
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, effect.radius * (0.5 + progress), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    });
+  }
+
   function drawReadyCue(ctx, state) {
     if (state.mode !== Data.MODES.READY) {
       return;
@@ -256,6 +319,10 @@
   }
 
   function getShake(state) {
+    if (state.persistent && state.persistent.settings && state.persistent.settings.reducedEffects) {
+      return { x: 0, y: 0 };
+    }
+
     var shake = state.effects.screenShake;
 
     if (!shake || shake.time <= 0 || shake.duration <= 0 || shake.magnitude <= 0) {
@@ -296,12 +363,16 @@
 
     ctx.save();
     ctx.translate(shake.x, shake.y);
+    drawBoss(ctx, runState);
     drawBricks(ctx, runState);
     drawReadyCue(ctx, runState);
     drawItems(ctx, runState);
     drawPaddle(ctx, runState);
     drawBalls(ctx, runState);
-    drawParticles(ctx, runState);
+    if (!runState.persistent || !runState.persistent.settings || !runState.persistent.settings.reducedEffects) {
+      drawEffects(ctx, runState);
+      drawParticles(ctx, runState);
+    }
     drawFloatingTexts(ctx, runState);
     ctx.restore();
 
