@@ -110,6 +110,18 @@
     return state;
   }
 
+  function goLobby() {
+    var state = State.restartRun();
+
+    resizeCanvas();
+    UI.hideAllOverlays();
+    UI.sync(state);
+    renderFrame();
+    resetFrameClock();
+
+    return state;
+  }
+
   function handleResize() {
     var state = State.getRunState();
 
@@ -137,7 +149,6 @@
 
     UI.init();
     canvas = UI.getCanvas();
-    Game.startRun(state);
     resizeCanvas();
     UI.showStartOverlay();
     UI.sync(state);
@@ -156,6 +167,7 @@
   AbyssBreaker.Main = {
     init: init,
     restartGame: restartGame,
+    goLobby: goLobby,
     resizeCanvas: resizeCanvas,
     renderFrame: renderFrame,
     startLoop: startLoop,
