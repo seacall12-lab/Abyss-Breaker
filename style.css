@@ -7,18 +7,17 @@
 :root {
   color-scheme: dark;
   --bg: #071016;
-  --shell: #0c1820;
-  --panel: rgba(10, 22, 29, 0.94);
-  --line: rgba(154, 192, 203, 0.22);
-  --text: #edf8f9;
-  --muted: #8aa0a8;
-  --cyan: #5ee2d6;
-  --green: #72e08f;
+  --shell: #0b1419;
+  --panel: rgba(10, 19, 24, 0.94);
+  --line: rgba(190, 220, 224, 0.18);
+  --text: #f3f7ff;
+  --muted: #91a4ad;
+  --green: #31c487;
+  --blue: #65c8ff;
+  --yellow: #f2c94c;
   --red: #ff6b6b;
-  --amber: #f3bd4f;
-  --button: #142a35;
-  --button-active: #1f4450;
-  --shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
+  --button: #162731;
+  --button-active: #234352;
   --radius: 8px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -30,9 +29,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(94, 226, 214, 0.16), transparent 34%),
-    linear-gradient(180deg, #05090d 0%, var(--bg) 52%, #020506 100%);
+  background: #05080b;
   color: var(--text);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -44,12 +41,13 @@ body {
 button {
   min-width: 44px;
   min-height: 44px;
-  border: 1px solid rgba(144, 204, 210, 0.28);
+  border: 1px solid rgba(160, 215, 224, 0.27);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--button-active), var(--button));
   color: var(--text);
   font: inherit;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 900;
   letter-spacing: 0;
   cursor: pointer;
   touch-action: manipulation;
@@ -59,8 +57,14 @@ button:active {
   transform: translateY(1px);
 }
 
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+  transform: none;
+}
+
 button:focus-visible {
-  outline: 2px solid var(--cyan);
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 
@@ -71,7 +75,6 @@ button:focus-visible {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  padding: 0;
 }
 
 #game-shell {
@@ -81,125 +84,55 @@ button:focus-visible {
   width: min(100vw, 480px);
   height: 100%;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(23, 47, 58, 0.9), transparent 14%),
-    var(--shell);
+  background: var(--shell);
   border-inline: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: var(--shadow);
   isolation: isolate;
 }
 
 #hud {
   z-index: 2;
   display: grid;
-  gap: 8px;
-  padding: calc(8px + var(--safe-top)) 10px 8px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(4, 11, 15, 0.86);
-  backdrop-filter: blur(12px);
-}
-
-.hud-hp,
-.hud-stats {
-  min-width: 0;
-}
-
-.hud-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  height: 18px;
-}
-
-.hud-label {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.hud-value {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 900;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.hp-track {
-  width: 100%;
-  height: 8px;
-  margin-top: 5px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.36);
-}
-
-#hp-fill {
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--green), #c9f76b);
-  transform-origin: left center;
-}
-
-.hud-stats {
-  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
+  padding: calc(8px + var(--safe-top)) 8px 8px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 12, 16, 0.92);
 }
 
 .hud-stat {
   display: grid;
   gap: 3px;
   min-width: 0;
-  padding: 6px 6px;
-  border: 1px solid rgba(154, 192, 203, 0.16);
+  padding: 6px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.hud-stat span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hud-stat strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #canvas-wrap {
-  position: relative;
   min-height: 0;
   overflow: hidden;
-  background:
-    linear-gradient(rgba(111, 221, 214, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(111, 221, 214, 0.06) 1px, transparent 1px),
-    linear-gradient(180deg, #10212b 0%, #071016 64%, #05090d 100%);
-  background-size: 100% 40px, 40px 100%, 100% 100%;
-}
-
-#canvas-wrap::before,
-#canvas-wrap::after {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  z-index: 1;
-  height: 1px;
-  content: "";
-  pointer-events: none;
-}
-
-#canvas-wrap::before {
-  top: 14%;
-  background: rgba(94, 226, 214, 0.16);
-}
-
-#canvas-wrap::after {
-  bottom: 15%;
-  background: rgba(255, 107, 107, 0.34);
+  background: #071016;
 }
 
 #game-canvas {
@@ -218,13 +151,12 @@ button:focus-visible {
   align-items: center;
   gap: 8px;
   min-height: calc(58px + var(--safe-bottom));
-  padding: 7px 10px calc(7px + var(--safe-bottom));
+  padding: 7px 8px calc(7px + var(--safe-bottom));
   border-top: 1px solid var(--line);
-  background: rgba(4, 11, 15, 0.9);
-  backdrop-filter: blur(12px);
+  background: rgba(5, 12, 16, 0.94);
 }
 
-#aim-guide {
+#control-guide {
   min-width: 0;
   margin: 0;
   overflow: hidden;
@@ -242,8 +174,16 @@ button:focus-visible {
 }
 
 .control-actions button {
-  padding: 0 11px;
-  font-size: 12px;
+  padding: 0 10px;
+}
+
+#launch-button {
+  border-color: rgba(49, 196, 135, 0.48);
+  background: linear-gradient(180deg, #2b825f, #1d4b3b);
+}
+
+.button-secondary {
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .overlay {
@@ -253,24 +193,20 @@ button:focus-visible {
   display: grid;
   place-items: center;
   padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
-  background: rgba(2, 6, 8, 0.62);
+  background: rgba(2, 6, 8, 0.66);
   backdrop-filter: blur(8px);
 }
 
 .overlay-panel {
   display: grid;
   gap: 12px;
-  width: min(100%, 300px);
+  width: min(100%, 312px);
   padding: 18px;
-  border: 1px solid rgba(154, 192, 203, 0.28);
+  border: 1px solid rgba(190, 220, 224, 0.25);
   border-radius: var(--radius);
   background: var(--panel);
-  box-shadow: var(--shadow);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
   text-align: center;
-}
-
-.overlay-panel-wide {
-  width: min(100%, 420px);
 }
 
 .overlay-kicker,
@@ -296,7 +232,7 @@ button:focus-visible {
   margin: 0;
   color: var(--text);
   font-weight: 900;
-  line-height: 1.05;
+  line-height: 1.08;
 }
 
 .overlay h1 {
@@ -312,22 +248,22 @@ button:focus-visible {
   padding-inline: 16px;
 }
 
-.button-secondary {
-  background: rgba(255, 255, 255, 0.055);
-}
-
 .result-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin: 2px 0;
+}
+
+#stage-clear-overlay .result-list {
+  grid-template-columns: 1fr;
 }
 
 .result-list div {
   display: grid;
   gap: 4px;
   padding: 8px 6px;
-  border: 1px solid rgba(154, 192, 203, 0.16);
+  border: 1px solid rgba(190, 220, 224, 0.14);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
 }
@@ -340,16 +276,10 @@ button:focus-visible {
 
 .result-list dd {
   margin: 0;
-  color: var(--amber);
-  font-size: 18px;
+  color: var(--yellow);
+  font-size: 20px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-}
-
-.upgrade-options {
-  display: grid;
-  gap: 8px;
-  min-height: 44px;
 }
 
 .is-hidden {
@@ -359,8 +289,8 @@ button:focus-visible {
 
 @media (max-width: 340px) {
   #hud {
-    gap: 6px;
-    padding-inline: 8px;
+    gap: 4px;
+    padding-inline: 6px;
   }
 
   .hud-stat {
@@ -368,7 +298,7 @@ button:focus-visible {
   }
 
   .hud-stat strong {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   #control-bar {
@@ -376,13 +306,13 @@ button:focus-visible {
     gap: 6px;
   }
 
-  #aim-guide {
+  #control-guide {
     text-align: center;
   }
 
   .control-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
