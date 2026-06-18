@@ -23,112 +23,137 @@
     MODES: {
       BOOT: "boot",
       READY: "ready",
-      AIMING: "aiming",
-      LAUNCHING: "launching",
       PLAYING: "playing",
-      RESOLVING: "resolving",
-      WAVE_CLEAR: "waveClear",
-      UPGRADE: "upgrade",
+      LIFE_LOST: "lifeLost",
+      STAGE_CLEAR: "stageClear",
       PAUSED: "paused",
       GAMEOVER: "gameover"
     },
 
-    GAME: {
-      maxDeltaTime: 0.05,
-      fixedStep: 1 / 60,
-      startingWave: 1,
-      startingGold: 0,
-      startingScore: 0
-    },
-
     CANVAS: {
       designWidth: 360,
-      designHeight: 600,
+      designHeight: 640,
       maxDevicePixelRatio: 2
     },
 
-    LAYOUT: {
-      columns: 7,
-      spawnRows: 2,
-      maxRows: 10,
-      topPaddingRatio: 0.08,
-      brickGapRatio: 0.012,
-      brickHeightRatio: 0.065,
-      dangerLineRatio: 0.84,
-      launchLineRatio: 0.92,
-      launchXRatio: 0.5,
-      minLaunchAngleDegrees: 12
+    GAME: {
+      maxDeltaTime: 0.05,
+      startingStage: 1,
+      startingLives: 3,
+      maxBalls: 8
     },
 
-    PLAYER_BASE: {
-      maxHp: 100,
-      hp: 100,
-      ballCount: 1,
-      ballDamage: 10,
-      critChance: 0.05,
-      critDamage: 1.5,
-      healAmount: 0,
-      bossDamage: 1
+    PADDLE: {
+      width: 90,
+      height: 14,
+      yOffset: 38,
+      speed: 1800,
+      expandMultiplier: 1.5,
+      maxWidthRatio: 0.55,
+      expandDuration: 10
     },
 
-    BALL_BASE: {
+    BALL: {
       radius: 6,
-      speed: 560,
-      launchInterval: 0.08,
-      pierce: 0,
-      collisionCooldown: 0.08,
-      maxSubSteps: 8
+      speed: 310,
+      minSpeed: 230,
+      maxSpeed: 430,
+      minVerticalRatio: 0.28,
+      launchAngleDegrees: -78,
+      launchSpreadDegrees: 18
+    },
+
+    BRICKS: {
+      columns: 7,
+      gap: 6,
+      top: 34,
+      height: 26,
+      sidePadding: 10
     },
 
     BRICK_TYPES: {
       normal: {
         id: "normal",
-        hpMultiplier: 1,
-        attackMultiplier: 1,
-        rewardMultiplier: 1,
-        scoreMultiplier: 1,
-        color: "#f06b4f"
+        hp: 1,
+        score: 100,
+        dropChance: 0.13,
+        destructible: true,
+        fill: "#31c487",
+        stroke: "#b7f6d9"
+      },
+      strong: {
+        id: "strong",
+        hp: 2,
+        score: 220,
+        dropChance: 0.18,
+        destructible: true,
+        fill: "#7b7ff0",
+        stroke: "#d5d7ff"
       }
     },
 
-    WAVE_BALANCE: {
-      baseBrickHp: 10,
-      brickHpPerWave: 4,
-      brickHpGrowth: 1.08,
-      baseBrickAttack: 5,
-      brickAttackPerWave: 1,
-      baseBrickReward: 1,
-      rewardEveryWaves: 4,
-      baseBrickCount: 3,
-      brickCountEveryWaves: 2,
-      maxBrickCount: 7,
-      minEmptyColumns: 1,
-      normalWaveType: "normal",
-      eliteWaveInterval: 0,
-      bossWaveInterval: 0,
-      upgradeInterval: 0
+    STAGES: [
+      {
+        pattern: [
+          "0111110",
+          "1122211",
+          "0111110",
+          "0011100"
+        ]
+      }
+    ],
+
+    ITEMS: {
+      dropChance: 0.15,
+      maxActive: 12,
+      width: 24,
+      height: 24,
+      fallSpeed: 128,
+      definitions: [
+        {
+          id: "paddle_expand",
+          name: "패들 확장",
+          symbol: "W",
+          weight: 40,
+          duration: 10,
+          value: 1.5,
+          color: "#35c98f"
+        },
+        {
+          id: "multi_ball",
+          name: "멀티볼",
+          symbol: "+",
+          weight: 34,
+          value: 2,
+          color: "#f2c94c"
+        },
+        {
+          id: "slow_ball",
+          name: "감속",
+          symbol: "S",
+          weight: 26,
+          duration: 8,
+          value: 0.75,
+          color: "#65c8ff"
+        }
+      ]
     },
 
     SCORE: {
-      brickDestroyed: 10,
-      waveCleared: 100,
-      goldToScore: 5
+      stageClear: 500
     },
 
     EFFECT_LIMITS: {
-      particles: 80,
-      damageTexts: 30,
-      screenShakeSeconds: 0.28
+      particles: 100,
+      floatingTexts: 30,
+      screenShakeSeconds: 0.18
     },
 
     STORAGE_DEFAULTS: {
       schemaVersion: 1,
-      bestWave: 0,
       bestScore: 0,
-      metaCurrency: 0,
-      upgrades: {},
+      highestStage: 1,
       settings: {
-        sound: true,
         vibration: true
       }
     }
