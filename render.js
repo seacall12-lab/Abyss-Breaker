@@ -10,28 +10,20 @@
     throw new Error("AbyssBreaker.Data, State, and Game must be loaded before render.js");
   }
 
-  function isFiniteNumber(value) {
-    return typeof value === "number" && isFinite(value);
-  }
-
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function isFiniteNumber(value) {
+    return typeof value === "number" && isFinite(value);
   }
 
   function getState(state) {
     return state || State.getRunState();
   }
 
-  function getCanvasFromTarget(target) {
-    if (!target) {
-      return null;
-    }
-
-    if (target.canvas) {
-      return target.canvas;
-    }
-
-    return target;
+  function getCanvas(target) {
+    return target && target.canvas ? target.canvas : target;
   }
 
   function getContext(target) {
@@ -39,26 +31,17 @@
       return null;
     }
 
-    if (typeof target.getContext === "function") {
-      return target.getContext("2d");
-    }
-
-    return target;
+    return typeof target.getContext === "function" ? target.getContext("2d") : target;
   }
 
   function resizeCanvas(canvas, state) {
     var runState = getState(state);
-
-    if (!canvas) {
-      return runState.viewport;
-    }
-
-    var rect = typeof canvas.getBoundingClientRect === "function" ? canvas.getBoundingClientRect() : null;
-    var cssWidth = rect && rect.width ? rect.width : (canvas.clientWidth || Data.CANVAS.designWidth);
-    var cssHeight = rect && rect.height ? rect.height : (canvas.clientHeight || Data.CANVAS.designHeight);
-    var devicePixelRatio = clamp(global.devicePixelRatio || 1, 1, Data.CANVAS.maxDevicePixelRatio);
-    var pixelWidth = Math.max(1, Math.round(cssWidth * devicePixelRatio));
-    var pixelHeight = Math.max(1, Math.round(cssHeight * devicePixelRatio));
+    var rect = canvas.getBoundingClientRect();
+    var cssWidth = rect.width || canvas.clientWidth || Data.CANVAS.designWidth;
+    var cssHeight = rect.height || canvas.clientHeight || Data.CANVAS.designHeight;
+    var dpr = clamp(global.devicePixelRatio || 1, 1, Data.CANVAS.maxDevicePixelRatio);
+    var pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
+    var pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
 
     if (canvas.width !== pixelWidth) {
       canvas.width = pixelWidth;
@@ -68,64 +51,13 @@
       canvas.height = pixelHeight;
     }
 
-    Game.setWorldSize(cssWidth, cssHeight, devicePixelRatio, runState);
-
-    return runState.viewport;
+    return Game.setWorldSize(cssWidth, cssHeight, dpr, runState);
   }
 
   function clear(ctx, state) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, state.viewport.pixelWidth, state.viewport.pixelHeight);
     ctx.setTransform(state.viewport.devicePixelRatio, 0, 0, state.viewport.devicePixelRatio, 0, 0);
-  }
-
-  function drawBackground(ctx, state) {
-    var width = state.viewport.cssWidth;
-    var height = state.viewport.cssHeight;
-    var gradient = ctx.createLinearGradient(0, 0, 0, height);
-
-    gradient.addColorStop(0, "#10232d");
-    gradient.addColorStop(0.58, "#071016");
-    gradient.addColorStop(1, "#030608");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-
-    ctx.strokeStyle = "rgba(109, 230, 220, 0.07)";
-    ctx.lineWidth = 1;
-
-    for (var x = 0; x <= width; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-
-    for (var y = 0; y <= height; y += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
-  }
-
-  function drawDangerLine(ctx, state) {
-    var layout = Game.getLayout(state);
-    var width = state.viewport.cssWidth;
-
-    ctx.save();
-    ctx.strokeStyle = "rgba(255, 107, 107, 0.78)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 8]);
-    ctx.beginPath();
-    ctx.moveTo(10, layout.dangerY);
-    ctx.lineTo(width - 10, layout.dangerY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = "rgba(255, 107, 107, 0.8)";
-    ctx.font = "700 10px system-ui, sans-serif";
-    ctx.textAlign = "right";
-    ctx.fillText("DANGER", width - 14, layout.dangerY - 6);
-    ctx.restore();
   }
 
   function roundedRect(ctx, x, y, width, height, radius) {
@@ -147,31 +79,58 @@
     ctx.quadraticCurveTo(x, y, x + r, y);
   }
 
+  function drawBackground(ctx, state) {
+    var width = state.viewport.cssWidth;
+    var height = state.viewport.cssHeight;
+    var gradient = ctx.createLinearGradient(0, 0, 0, height);
+
+    gradient.addColorStop(0, "#071e25");
+    gradient.addColorStop(0.42, "#0b1218");
+    gradient.addColorStop(1, "#07090d");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.055)";
+    ctx.lineWidth = 1;
+
+    for (var y = 40; y < height; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = "rgba(61, 196, 151, 0.17)";
+    ctx.beginPath();
+    ctx.moveTo(10, state.paddle.y - 18);
+    ctx.lineTo(width - 10, state.paddle.y - 18);
+    ctx.stroke();
+  }
+
   function drawBrick(ctx, brick) {
-    var typeData = Data.BRICK_TYPES[brick.type] || Data.BRICK_TYPES.normal;
+    var type = Data.BRICK_TYPES[brick.type] || Data.BRICK_TYPES.normal;
     var hpRatio = clamp(brick.hp / Math.max(1, brick.maxHp), 0, 1);
 
     ctx.save();
+    ctx.globalAlpha = brick.alive ? 1 : 0.25;
     ctx.beginPath();
-    roundedRect(ctx, brick.x, brick.y, brick.width, brick.height, 6);
-    ctx.fillStyle = typeData.color;
-    ctx.globalAlpha = brick.alive ? 1 : 0.35;
+    roundedRect(ctx, brick.x, brick.y, brick.width, brick.height, 5);
+    ctx.fillStyle = type.fill;
     ctx.fill();
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
-    ctx.fillRect(brick.x, brick.y + brick.height - 5, brick.width, 5);
-    ctx.fillStyle = hpRatio > 0.35 ? "#72e08f" : "#ffdd66";
-    ctx.fillRect(brick.x, brick.y + brick.height - 5, brick.width * hpRatio, 5);
-
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+    ctx.strokeStyle = type.stroke;
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    ctx.fillStyle = "#fff8ea";
-    ctx.font = "900 14px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.26)";
+    ctx.fillRect(brick.x, brick.y + brick.height - 5, brick.width, 5);
+    ctx.fillStyle = hpRatio > 0.5 ? "#e9fff5" : "#ffe27a";
+    ctx.fillRect(brick.x, brick.y + brick.height - 5, brick.width * hpRatio, 5);
+
+    ctx.fillStyle = "#071016";
+    ctx.font = "900 13px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(Math.ceil(brick.hp)), brick.x + brick.width / 2, brick.y + brick.height / 2);
+    ctx.fillText(String(Math.max(0, brick.hp)), brick.x + brick.width / 2, brick.y + brick.height / 2 - 1);
     ctx.restore();
   }
 
@@ -183,17 +142,34 @@
     });
   }
 
+  function drawPaddle(ctx, state) {
+    var paddle = state.paddle;
+    var gradient = ctx.createLinearGradient(paddle.x, paddle.y, paddle.x, paddle.y + paddle.height);
+
+    gradient.addColorStop(0, "#f7fbff");
+    gradient.addColorStop(1, "#65c8ff");
+
+    ctx.save();
+    ctx.shadowColor = "rgba(101, 200, 255, 0.42)";
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    roundedRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, 7);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawBall(ctx, ball) {
-    if (!ball.active && !ball.returned) {
+    if (!ball.active) {
       return;
     }
 
     ctx.save();
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-    ctx.fillStyle = ball.active ? "#eafcff" : "rgba(234, 252, 255, 0.5)";
+    ctx.fillStyle = ball.attached ? "#dcefff" : "#ffffff";
     ctx.fill();
-    ctx.strokeStyle = "#5ee2d6";
+    ctx.strokeStyle = "#65c8ff";
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
@@ -205,84 +181,81 @@
     });
   }
 
-  function drawLauncher(ctx, state) {
-    var x = state.launch.originX;
-    var y = state.launch.originY;
-
-    ctx.save();
-    ctx.fillStyle = "rgba(94, 226, 214, 0.2)";
-    ctx.beginPath();
-    ctx.arc(x, y, 18, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#5ee2d6";
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawAimLine(ctx, state) {
-    if (!state.aim.active || !state.aim.valid) {
-      return;
-    }
-
-    var x = state.launch.originX;
-    var y = state.launch.originY;
-    var length = Math.min(state.viewport.cssHeight * 0.45, 260);
-    var endX = x + state.aim.directionX * length;
-    var endY = y + state.aim.directionY * length;
-
-    ctx.save();
-    ctx.strokeStyle = "rgba(94, 226, 214, 0.82)";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([10, 8]);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(endX, endY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.fillStyle = "#5ee2d6";
-    ctx.beginPath();
-    ctx.arc(endX, endY, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawDamageTexts(ctx, state) {
-    state.effects.damageTexts.forEach(function (text) {
-      var progress = clamp(text.age / Math.max(0.01, text.life), 0, 1);
-
+  function drawItems(ctx, state) {
+    state.items.forEach(function (item) {
       ctx.save();
-      ctx.globalAlpha = 1 - progress;
-      ctx.fillStyle = text.critical ? "#ffef70" : "#edf8f9";
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
-      ctx.lineWidth = 3;
-      ctx.font = text.critical ? "900 18px system-ui, sans-serif" : "900 14px system-ui, sans-serif";
+      ctx.beginPath();
+      roundedRect(ctx, item.x, item.y, item.width, item.height, 6);
+      ctx.fillStyle = item.color;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "#061014";
+      ctx.font = "900 14px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.strokeText(String(text.value), text.x, text.y);
-      ctx.fillText(String(text.value), text.x, text.y);
+      ctx.fillText(item.symbol, item.x + item.width / 2, item.y + item.height / 2);
       ctx.restore();
     });
   }
 
   function drawParticles(ctx, state) {
-    state.effects.particles.forEach(function (particle) {
+    state.particles.forEach(function (particle) {
       var progress = clamp(particle.age / Math.max(0.01, particle.life), 0, 1);
 
       ctx.save();
       ctx.globalAlpha = 1 - progress;
       ctx.fillStyle = particle.color;
       ctx.beginPath();
-      ctx.arc(particle.x, particle.y, particle.radius * (1 - progress * 0.5), 0, Math.PI * 2);
+      ctx.arc(particle.x, particle.y, particle.radius * (1 - progress * 0.35), 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     });
   }
 
-  function getShakeOffset(state) {
+  function drawFloatingTexts(ctx, state) {
+    state.floatingTexts.forEach(function (text) {
+      var progress = clamp(text.age / Math.max(0.01, text.life), 0, 1);
+
+      ctx.save();
+      ctx.globalAlpha = 1 - progress;
+      ctx.fillStyle = text.color;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+      ctx.lineWidth = 3;
+      ctx.font = "900 13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.strokeText(text.text, text.x, text.y);
+      ctx.fillText(text.text, text.x, text.y);
+      ctx.restore();
+    });
+  }
+
+  function drawReadyCue(ctx, state) {
+    if (state.mode !== Data.MODES.READY) {
+      return;
+    }
+
+    var ball = state.balls[0];
+
+    if (!ball) {
+      return;
+    }
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(ball.x, ball.y - 8);
+    ctx.lineTo(ball.x - 22, ball.y - 94);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  function getShake(state) {
     var shake = state.effects.screenShake;
 
     if (!shake || shake.time <= 0 || shake.duration <= 0 || shake.magnitude <= 0) {
@@ -291,18 +264,18 @@
 
     var progress = clamp(shake.time / shake.duration, 0, 1);
     var amount = shake.magnitude * progress;
-    var seed = state.time.frame * 12.9898;
+    var seed = state.time.frame * 1.77;
 
     return {
       x: Math.sin(seed) * amount,
-      y: Math.cos(seed * 1.37) * amount
+      y: Math.cos(seed * 1.31) * amount
     };
   }
 
   function render(target, state) {
     var runState = getState(state);
     var ctx = getContext(target);
-    var canvas = getCanvasFromTarget(target);
+    var canvas = getCanvas(target);
 
     if (!ctx) {
       return false;
@@ -319,17 +292,17 @@
     clear(ctx, runState);
     drawBackground(ctx, runState);
 
-    var shake = getShakeOffset(runState);
+    var shake = getShake(runState);
 
     ctx.save();
     ctx.translate(shake.x, shake.y);
-    drawDangerLine(ctx, runState);
     drawBricks(ctx, runState);
-    drawLauncher(ctx, runState);
-    drawAimLine(ctx, runState);
+    drawReadyCue(ctx, runState);
+    drawItems(ctx, runState);
+    drawPaddle(ctx, runState);
     drawBalls(ctx, runState);
     drawParticles(ctx, runState);
-    drawDamageTexts(ctx, runState);
+    drawFloatingTexts(ctx, runState);
     ctx.restore();
 
     return true;
@@ -337,14 +310,6 @@
 
   AbyssBreaker.Render = {
     resizeCanvas: resizeCanvas,
-    render: render,
-    drawBackground: drawBackground,
-    drawDangerLine: drawDangerLine,
-    drawBricks: drawBricks,
-    drawBalls: drawBalls,
-    drawLauncher: drawLauncher,
-    drawAimLine: drawAimLine,
-    drawParticles: drawParticles,
-    drawDamageTexts: drawDamageTexts
+    render: render
   };
 })(typeof window !== "undefined" ? window : globalThis);
