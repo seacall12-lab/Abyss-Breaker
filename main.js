@@ -18,7 +18,7 @@
   var lastTimestamp = 0;
   var canvas = null;
 
-  function getNow() {
+  function now() {
     return global.performance && typeof global.performance.now === "function" ? global.performance.now() : Date.now();
   }
 
@@ -42,8 +42,7 @@
       return false;
     }
 
-    Render.render(canvas, State.getRunState());
-    return true;
+    return Render.render(canvas, State.getRunState());
   }
 
   function tick(timestamp) {
@@ -51,15 +50,15 @@
       return;
     }
 
-    var now = typeof timestamp === "number" ? timestamp : getNow();
+    var current = typeof timestamp === "number" ? timestamp : now();
     var state = State.getRunState();
 
     if (!lastTimestamp) {
-      lastTimestamp = now;
+      lastTimestamp = current;
     }
 
-    var delta = Math.min((now - lastTimestamp) / 1000, Data.GAME.maxDeltaTime);
-    lastTimestamp = now;
+    var delta = Math.min((current - lastTimestamp) / 1000, Data.GAME.maxDeltaTime);
+    lastTimestamp = current;
 
     if (state.flags.needsResize) {
       resizeCanvas();
@@ -98,7 +97,7 @@
     return true;
   }
 
-  function startGame() {
+  function restartGame() {
     var state = State.restartRun();
 
     Game.startRun(state);
@@ -109,10 +108,6 @@
     resetFrameClock();
 
     return state;
-  }
-
-  function restartGame() {
-    return startGame();
   }
 
   function handleResize() {
@@ -128,11 +123,9 @@
   function handleVisibilityChange() {
     resetFrameClock();
 
-    if (global.document.hidden) {
-      return;
+    if (!global.document.hidden) {
+      renderFrame();
     }
-
-    renderFrame();
   }
 
   function init() {
@@ -162,7 +155,6 @@
 
   AbyssBreaker.Main = {
     init: init,
-    startGame: startGame,
     restartGame: restartGame,
     resizeCanvas: resizeCanvas,
     renderFrame: renderFrame,
