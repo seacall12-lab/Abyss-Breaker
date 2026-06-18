@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071016">
+  <title>Abyss Breaker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <main id="game-shell" aria-label="Abyss Breaker game">
+      <header id="hud" aria-label="Game status">
+        <section class="hud-hp" aria-label="Player HP">
+          <div class="hud-row">
+            <span class="hud-label">HP</span>
+            <span class="hud-value"><span id="hp-value">100</span>/<span id="hp-max">100</span></span>
+          </div>
+          <div class="hp-track" aria-hidden="true">
+            <div id="hp-fill"></div>
+          </div>
+        </section>
+
+        <section class="hud-stats" aria-label="Run status">
+          <div class="hud-stat">
+            <span class="hud-label">WAVE</span>
+            <strong id="wave-value">1</strong>
+          </div>
+          <div class="hud-stat">
+            <span class="hud-label">GOLD</span>
+            <strong id="gold-value">0</strong>
+          </div>
+          <div class="hud-stat">
+            <span class="hud-label">SCORE</span>
+            <strong id="score-value">0</strong>
+          </div>
+          <div class="hud-stat">
+            <span class="hud-label">BEST</span>
+            <strong id="best-wave-value">0</strong>
+          </div>
+        </section>
+      </header>
+
+      <section id="canvas-wrap" aria-label="Battle field">
+        <canvas id="game-canvas" width="360" height="600">
+          이 브라우저는 Canvas를 지원하지 않습니다.
+        </canvas>
+      </section>
+
+      <footer id="control-bar" aria-label="Game controls">
+        <p id="aim-guide">아래에서 드래그해 조준</p>
+        <div class="control-actions">
+          <button id="pause-button" type="button" aria-label="Pause">일시정지</button>
+          <button id="restart-button" type="button" aria-label="Restart">재시작</button>
+        </div>
+      </footer>
+
+      <section id="start-overlay" class="overlay" aria-label="Start game">
+        <div class="overlay-panel">
+          <p class="overlay-kicker">Abyss Breaker</p>
+          <h1>심연 돌파</h1>
+          <p class="overlay-copy">각도를 정하고 공을 발사하세요.</p>
+          <button id="start-button" type="button">시작</button>
+        </div>
+      </section>
+
+      <section id="pause-overlay" class="overlay is-hidden" aria-label="Paused">
+        <div class="overlay-panel">
+          <p class="overlay-kicker">Paused</p>
+          <h2>일시정지</h2>
+          <button id="resume-button" type="button">계속</button>
+          <button id="pause-restart-button" type="button" class="button-secondary">재시작</button>
+        </div>
+      </section>
+
+      <section id="gameover-overlay" class="overlay is-hidden" aria-label="Game over">
+        <div class="overlay-panel">
+          <p class="overlay-kicker">Game Over</p>
+          <h2>전투 종료</h2>
+          <dl class="result-list">
+            <div>
+              <dt>WAVE</dt>
+              <dd id="gameover-wave">0</dd>
+            </div>
+            <div>
+              <dt>SCORE</dt>
+              <dd id="gameover-score">0</dd>
+            </div>
+            <div>
+              <dt>BEST</dt>
+              <dd id="gameover-best">0</dd>
+            </div>
+          </dl>
+          <button id="gameover-restart-button" type="button">다시 시작</button>
+        </div>
+      </section>
+
+      <section id="upgrade-overlay" class="overlay is-hidden" aria-label="Choose upgrade">
+        <div class="overlay-panel overlay-panel-wide">
+          <p class="overlay-kicker">Upgrade</p>
+          <h2 id="upgrade-title">강화 선택</h2>
+          <div id="upgrade-options" class="upgrade-options" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="state.js"></script>
+  <script src="game.js"></script>
+  <script src="render.js"></script>
+  <script src="ui.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
