@@ -31,6 +31,15 @@
     return Math.max(1, state.viewport.cssHeight || Data.CANVAS.designHeight);
   }
 
+  function getPaddleBottomOffset(state) {
+    var height = getHeight(state);
+    return clamp(
+      height * (Data.PADDLE.bottomOffsetRatio || 0),
+      Data.PADDLE.minBottomOffset || Data.PADDLE.yOffset,
+      Data.PADDLE.maxBottomOffset || Data.PADDLE.yOffset
+    );
+  }
+
   function getStageData(stageOrState) {
     var stageNumber = typeof stageOrState === "number" ? stageOrState : stageOrState.stage;
     var state = typeof stageOrState === "number" ? null : stageOrState;
@@ -42,8 +51,21 @@
 
     stage.id = number;
 
+    if (Data.STAGE_EXTRAS && Data.STAGE_EXTRAS[number]) {
+      var extra = Data.STAGE_EXTRAS[number];
+      Object.keys(extra).forEach(function (key) {
+        stage[key] = JSON.parse(JSON.stringify(extra[key]));
+      });
+    }
+
     if (rules.endless && number > Data.GAME.finalStage) {
       var scale = Math.floor((number - Data.GAME.finalStage) / Math.max(1, rules.scalingEvery || 5)) + 1;
+      var cycle = Math.floor((number - 11) / 5) % 3;
+      var endlessZone = cycle === 0 ? "corridor" : cycle === 1 ? "rift" : "core";
+      var templateIndex = cycle === 0 ? 4 : cycle === 1 ? 7 : 9;
+      var template = Data.STAGE_EXTRAS && Data.STAGE_EXTRAS[templateIndex] ? Data.STAGE_EXTRAS[templateIndex] : {};
+      stage.zoneId = endlessZone;
+      stage.gimmicks = JSON.parse(JSON.stringify(template.gimmicks || []));
       stage.name = "무한 " + number;
       stage.brickHpMultiplier = clamp(base.brickHpMultiplier + scale * 0.12, 1, 3.2);
       stage.ballSpeedMultiplier = clamp(base.ballSpeedMultiplier + scale * 0.015, 1, 1.22);
@@ -64,6 +86,10 @@
 
   function getBossData(id) {
     return id ? Data.BOSSES[id] : null;
+  }
+
+  function getZoneData(id) {
+    return Data.ZONES && Data.ZONES[id] ? Data.ZONES[id] : (Data.ZONES ? Data.ZONES.gate : null);
   }
 
   function getUpgradeLevel(state, id) {
@@ -103,6 +129,51 @@
     return Array.isArray(list) && list.indexOf(id) !== -1;
   }
 
+  function isUnlocked(state, group, id) {
+    var save = state && state.persistent;
+    var unlocks = save && save.unlocks && save.unlocks[group];
+
+    if (!id) {
+      return false;
+    }
+
+    if (unlocks && typeof unlocks[id] === "boolean") {
+      return unlocks[id];
+    }
+
+    return true;
+  }
+
+  function hashSeed(text) {
+    var hash = 2166136261;
+    var input = String(text || "");
+
+    for (var index = 0; index < input.length; index++) {
+      hash ^= input.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+
+    return hash >>> 0;
+  }
+
+  function getLocalDateKey() {
+    var date = new Date();
+    var year = date.getFullYear();
+    var month = String(date.getMonth() + 1).padStart(2, "0");
+    var day = String(date.getDate()).padStart(2, "0");
+    return year + "-" + month + "-" + day;
+  }
+
+  function random(state) {
+    if (!state || !state.rng) {
+      return Math.random();
+    }
+
+    var next = (Math.imul(1664525, state.rng.state >>> 0) + 1013904223) >>> 0;
+    state.rng.state = next;
+    return next / 4294967296;
+  }
+
   function emitFeedback(kind, vibration) {
     if (!AbyssBreaker.Feedback) {
       return;
@@ -121,6 +192,10 @@
     return state.selectedRelicId === id || (Array.isArray(state.selectedRelicIds) && state.selectedRelicIds.indexOf(id) !== -1);
   }
 
+  function hasEvolution(state, id) {
+    return !!(state.activeEvolutions && state.activeEvolutions[id]);
+  }
+
   function isFocusedLensActive(state) {
     return hasRelic(state, "focused_lens") && activeBallCount(state) === 1;
   }
@@ -137,41 +212,58 @@
 
   function getPaddleWidthMultiplier(state) {
     return getClassData(state).paddleWidthMultiplier *
+      (hasRelic(state, "giant_grip") ? 1.15 : 1) *
       (1 + getMetaLevel(state, "paddleWidth") * 0.03) *
       (1 + getUpgradeLevel(state, "paddle_guard") * 0.12);
   }
 
   function getMaxBalls(state) {
-    return Data.GAME.maxBalls + getUpgradeLevel(state, "multi_capacity") * 2;
+    return Data.GAME.maxBalls + getUpgradeLevel(state, "multi_capacity") * 2 + (hasEvolution(state, "split_storm") ? 1 : 0);
   }
 
   function getStartBallCount(state) {
     var relicBonus = hasRelic(state, "twin_core") ? 1 : 0;
-    return clamp(1 + getUpgradeLevel(state, "split_start") + relicBonus, 1, getMaxBalls(state));
+    var evolutionBonus = hasEvolution(state, "split_storm") ? 1 : 0;
+    return clamp(1 + getUpgradeLevel(state, "split_start") + relicBonus + evolutionBonus, 1, getMaxBalls(state));
   }
 
   function getBrickDamage(state) {
-    return 1 + getClassData(state).brickDamageAdd + getUpgradeLevel(state, "break_power") + (isFocusedLensActive(state) ? 1 : 0);
+    var counters = state.evolutionCounters || {};
+    return 1 + getClassData(state).brickDamageAdd + getUpgradeLevel(state, "break_power") +
+      Math.max(0, counters.precisionPrimed || 0) +
+      Math.max(0, counters.portalPrimed || 0) +
+      Math.max(0, counters.bumperDamageStacks || 0) +
+      (isFocusedLensActive(state) ? 1 : 0) +
+      (hasEvolution(state, "piercing_nature") ? 1 : 0) +
+      (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 2 : 0);
   }
 
   function getPierceCount(state) {
-    return getUpgradeLevel(state, "piercing_orb") + (hasRelic(state, "piercing_crystal") ? 1 : 0);
+    return getUpgradeLevel(state, "piercing_orb") + (hasRelic(state, "piercing_crystal") ? 1 : 0) + (hasEvolution(state, "piercing_nature") ? 1 : 0);
   }
 
   function getScoreMultiplier(state) {
+    var counters = state.evolutionCounters || {};
     return getClassData(state).scoreMultiplier *
       getGameModeData(state).scoreMultiplier *
       (1 + getMetaLevel(state, "scoreBonus") * 0.05) *
       (1 + getUpgradeLevel(state, "score_amp") * 0.25) *
-      (isFocusedLensActive(state) ? 1.3 : 1);
+      (counters.precisionScore || 1) *
+      (counters.portalScore || 1) *
+      (hasRelic(state, "precision_tuner") && getClassData(state).id === "tuner" ? 1.2 : 1) *
+      (isFocusedLensActive(state) ? 1.3 : 1) *
+      (hasEvolution(state, "split_storm") && activeBallCount(state) >= 3 ? 1.2 : 1) *
+      (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 1.5 : 1);
   }
 
   function getDropMultiplier(state) {
-    return 1 + getUpgradeLevel(state, "nature_drop") * 0.2;
+    return (1 + getUpgradeLevel(state, "nature_drop") * 0.2) * (getClassData(state).itemDropMultiplier || 1);
   }
 
   function getDurationMultiplier(state) {
-    return 1 + getUpgradeLevel(state, "duration_boost") * 0.25;
+    return (1 + getUpgradeLevel(state, "duration_boost") * 0.25) *
+      (getClassData(state).itemDurationMultiplier || 1) *
+      (hasRelic(state, "alchemist_star") ? 1.15 : 1);
   }
 
   function getDestroyExplosionChance(state) {
@@ -312,6 +404,30 @@
     state.boss.y = Math.max(30, state.boss.y);
   }
 
+  function relayoutGimmicks(state) {
+    var width = getWidth(state);
+    var height = getHeight(state);
+
+    (state.gimmicks || []).forEach(function (gimmick) {
+      if (gimmick.type === "portal") {
+        gimmick.entryX = (gimmick.entry && gimmick.entry.xRatio || 0.5) * width;
+        gimmick.entryY = (gimmick.entry && gimmick.entry.yRatio || 0.5) * height;
+        gimmick.exitX = (gimmick.exit && gimmick.exit.xRatio || 0.5) * width;
+        gimmick.exitY = (gimmick.exit && gimmick.exit.yRatio || 0.5) * height;
+      } else {
+        gimmick.x = (gimmick.xRatio || 0.5) * width;
+        gimmick.y = (gimmick.yRatio || 0.5) * height;
+      }
+
+      if (gimmick.type === "movingMirror") {
+        gimmick.width = Math.max(34, (gimmick.widthRatio || 0.22) * width);
+        gimmick.height = gimmick.height || 8;
+        gimmick.minPosition = (gimmick.minRatio || 0.2) * (gimmick.axis === "y" ? height : width);
+        gimmick.maxPosition = (gimmick.maxRatio || 0.8) * (gimmick.axis === "y" ? height : width);
+      }
+    });
+  }
+
   function clampPaddle(state) {
     var width = getWidth(state);
     var maxWidth = width * Data.PADDLE.maxWidthRatio;
@@ -324,7 +440,7 @@
       state.paddle.baseWidth;
     state.paddle.x = clamp(state.paddle.x, 0, width - state.paddle.width);
     state.paddle.targetX = clamp(state.paddle.targetX, state.paddle.width / 2, width - state.paddle.width / 2);
-    state.paddle.y = getHeight(state) - Data.PADDLE.yOffset;
+    state.paddle.y = getHeight(state) - getPaddleBottomOffset(state);
   }
 
   function setWorldSize(width, height, devicePixelRatio, state) {
@@ -339,12 +455,17 @@
     }
 
     runState.viewport.devicePixelRatio = clamp(devicePixelRatio || 1, 1, Data.CANVAS.maxDevicePixelRatio);
+    if (Data.CANVAS.maxPixelCount) {
+      var cssPixels = Math.max(1, runState.viewport.cssWidth * runState.viewport.cssHeight);
+      runState.viewport.devicePixelRatio = Math.min(runState.viewport.devicePixelRatio, Math.sqrt(Data.CANVAS.maxPixelCount / cssPixels));
+    }
     runState.viewport.pixelWidth = Math.round(runState.viewport.cssWidth * runState.viewport.devicePixelRatio);
     runState.viewport.pixelHeight = Math.round(runState.viewport.cssHeight * runState.viewport.devicePixelRatio);
 
     clampPaddle(runState);
     relayoutBricks(runState);
     relayoutBoss(runState);
+    relayoutGimmicks(runState);
     syncAttachedBalls(runState);
     runState.flags.needsResize = false;
 
@@ -367,6 +488,12 @@
       hp += 1;
     }
 
+    if (stage.pattern && String(stage.pattern[row] || "").charAt(col) === "6") {
+      typeId = "shielded";
+      type = Data.BRICK_TYPES[typeId] || type;
+      hp = Math.max(2, Math.round(type.hp * stage.brickHpMultiplier));
+    }
+
     return {
       id: state.counters.nextBrickId++,
       type: type.id,
@@ -384,6 +511,8 @@
       explosive: !!type.explosive,
       destructible: !!type.destructible,
       alive: true,
+      shieldActive: typeId === "shielded",
+      shieldTimer: 0,
       rewardGranted: false,
       dropGranted: false,
       spawnedByBoss: !!spawnedByBoss
@@ -427,6 +556,7 @@
       hp: Math.round(bossData.maxHp * (1 + endlessScale * 0.18)),
       maxHp: Math.round(bossData.maxHp * (1 + endlessScale * 0.18)),
       alive: true,
+      phase: 0,
       rewardGranted: false,
       shieldActive: false,
       speedMultiplier: 1 + endlessScale * 0.06,
@@ -436,6 +566,37 @@
     state.bossTimers.shield = 0;
     state.bossPhase = 0;
     return state.boss;
+  }
+
+  function createStageGimmicks(state) {
+    var stage = getStageData(state);
+    var limits = Data.GIMMICK_LIMITS || {};
+    var counts = {};
+
+    state.zoneId = stage.zoneId || "gate";
+    state.gimmicks = [];
+    (stage.gimmicks || []).forEach(function (source, index) {
+      var type = source.type || "bumper";
+      counts[type] = (counts[type] || 0) + 1;
+      if ((type === "bumper" && counts[type] > (limits.bumpers || 4)) ||
+          (type === "portal" && counts[type] > (limits.portals || 2)) ||
+          (type === "movingMirror" && counts[type] > (limits.movingMirrors || 3)) ||
+          (type === "spinner" && counts[type] > (limits.spinners || 2))) {
+        return;
+      }
+
+      var gimmick = JSON.parse(JSON.stringify(source));
+      gimmick.id = type + ":" + state.stage + ":" + index;
+      gimmick.active = true;
+      gimmick.cooldowns = {};
+      gimmick.angle = gimmick.angle || 0;
+      gimmick.direction = gimmick.direction || 1;
+      gimmick.radius = gimmick.radius || 15;
+      gimmick.speedBoost = gimmick.speedBoost || 1.05;
+      gimmick.collisionCooldown = gimmick.collisionCooldown || 10;
+      state.gimmicks.push(gimmick);
+    });
+    relayoutGimmicks(state);
   }
 
   function createAttachedBall(state, offsetX) {
@@ -448,6 +609,11 @@
     state.balls = [];
     state.items = [];
     state.activeEffects.slowBallTimeRemaining = 0;
+    state.activeEffects.magneticPaddleTimeRemaining = 0;
+    state.activeEffects.laserPaddleTimeRemaining = 0;
+    state.activeEffects.laserCooldown = 0;
+    state.activeEffects.bottomBarrierTimeRemaining = 0;
+    state.activeEffects.bottomBarrierDurability = 0;
     state.paddle.expandTimeRemaining = 0;
     clampPaddle(state);
 
@@ -468,19 +634,38 @@
     runState.flags.runClearHandled = false;
     runState.flags.bossRewardGranted = false;
     runState.stageRelicFlags.guardianSaved = false;
+    runState.stageRelicFlags.voidSaved = false;
     runState.particles = [];
     runState.effects = [];
     runState.floatingTexts = [];
     runState.items = [];
+    runState.gimmicks = [];
+    runState.gimmickEffects = [];
+    runState.gimmickTimers = {};
+    runState.evolutionStageFlags = {};
+    if (runState.evolutionCounters) {
+      runState.evolutionCounters.precisionPrimed = 0;
+      runState.evolutionCounters.precisionScore = 1;
+      runState.evolutionCounters.portalPrimed = 0;
+      runState.evolutionCounters.portalScore = 1;
+      runState.evolutionCounters.bumperDamageStacks = 0;
+    }
     runState.upgrades.pending = [];
     runState.upgrades.selectionLocked = false;
     buildStage(runState);
     createBoss(runState);
+    createStageGimmicks(runState);
     resetBallToPaddle(runState);
+    if (hasEvolution(runState, "abyss_rebirth")) {
+      runState.activeEffects.bottomBarrierTimeRemaining = Math.max(runState.activeEffects.bottomBarrierTimeRemaining || 0, 8);
+      runState.activeEffects.bottomBarrierDurability = Math.max(runState.activeEffects.bottomBarrierDurability || 0, 1);
+      runState.evolutionStageFlags.abyssRebirth = true;
+    }
     runState.highestStageReached = Math.max(runState.highestStageReached || 1, runState.stage);
     State.updateHighestStage(runState.stage);
     State.setMode(Data.MODES.READY);
     runState.flags.needsHudUpdate = true;
+    State.saveActiveRun(runState, Data.MODES.READY);
     return runState;
   }
 
@@ -491,6 +676,7 @@
     var rules = modeData.rules || {};
     var extraLives = rules.ignoreExtraLife ? 0 : getMetaLevel(runState, "extraLife") + classData.maxLifeAdd;
 
+    State.clearActiveRun();
     runState.stage = Data.GAME.startingStage;
     runState.score = 0;
     runState.selectedClassId = runState.persistent.selectedClassId;
@@ -515,11 +701,37 @@
     runState.selectedRelicId = null;
     runState.selectedRelicIds = [];
     runState.relicChoices = [];
+    runState.activeEvolutions = {};
+    runState.evolutionCounters = {
+      itemsCollected: 0,
+      chainedExplosionsThisFrame: 0,
+      precisionPrimed: 0,
+      precisionScore: 1,
+      portalPrimed: 0,
+      portalScore: 1,
+      bumperDamageStacks: 0,
+      dailyRewardStage5: false,
+      dailyRewardClear: false
+    };
+    runState.evolutionStageFlags = {};
+    runState.runModifiers = {};
+    if (rules.daily) {
+      var dateKey = getLocalDateKey();
+      var seed = hashSeed(dateKey + ":" + runState.selectedClassId);
+      runState.rng = { seed: seed, state: seed || 1, dailyDate: dateKey };
+    } else {
+      runState.rng = null;
+    }
+    runState.tutorial = {
+      active: !!(runState.persistent.tutorial && !runState.persistent.tutorial.completed && !runState.persistent.tutorial.skipped),
+      step: 0
+    };
     runState.relicCounters = {
       bricksDestroyed: 0
     };
     runState.stageRelicFlags = {
-      guardianSaved: false
+      guardianSaved: false,
+      voidSaved: false
     };
     runState.flags.runRewardGranted = false;
     runState.flags.runStarted = true;
@@ -590,7 +802,7 @@
   function launchBall(state) {
     var runState = getState(state);
 
-    if (runState.mode !== Data.MODES.READY) {
+    if (runState.mode !== Data.MODES.READY && runState.mode !== Data.MODES.PLAYING) {
       return false;
     }
 
@@ -599,11 +811,16 @@
     });
     var speed = getCurrentBallSpeed(runState);
 
+    if (!attached.length) {
+      return false;
+    }
+
     attached.forEach(function (ball, index) {
       var spreadIndex = index - (attached.length - 1) / 2;
       var angle = (Data.BALL.launchAngleDegrees + spreadIndex * Data.BALL.launchSpreadDegrees) * Math.PI / 180;
 
       ball.attached = false;
+      ball.magneticHold = 0;
       ball.active = true;
       ball.x = runState.paddle.x + runState.paddle.width / 2 + spreadIndex * 10;
       ball.y = runState.paddle.y - ball.radius - 2;
@@ -617,7 +834,9 @@
       normalizeBallVelocity(runState, ball, speed);
     });
 
-    State.setMode(Data.MODES.PLAYING);
+    if (runState.mode !== Data.MODES.PLAYING) {
+      State.setMode(Data.MODES.PLAYING);
+    }
     updateRunMaxBalls(runState);
     return true;
   }
@@ -714,6 +933,26 @@
       ball.vy = Math.abs(ball.vy);
     }
 
+    if (ball.y + ball.radius > getHeight(state) - 8 && state.activeEffects.bottomBarrierDurability > 0) {
+      ball.y = getHeight(state) - 8 - ball.radius;
+      ball.vy = -Math.abs(ball.vy);
+      normalizeBallVelocity(state, ball);
+      state.activeEffects.bottomBarrierDurability = Math.max(0, state.activeEffects.bottomBarrierDurability - 1);
+      if (state.activeEffects.bottomBarrierDurability <= 0) {
+        state.activeEffects.bottomBarrierTimeRemaining = 0;
+      }
+      addLineEffect(state, 12, getHeight(state) - 8, getWidth(state) - 12, getHeight(state) - 8, "#9ee6a8");
+    }
+
+    if (ball.y - ball.radius > getHeight(state) && hasRelic(state, "void_safety_net") && !state.stageRelicFlags.voidSaved && random(state) < 0.5) {
+      state.stageRelicFlags.voidSaved = true;
+      ball.y = state.paddle.y - ball.radius - 2;
+      ball.vy = -Math.abs(ball.vy || getCurrentBallSpeed(state));
+      normalizeBallVelocity(state, ball);
+      addFloatingText(state, getWidth(state) / 2, state.paddle.y - 22, "Safety Net", "#9ee6a8");
+      return;
+    }
+
     if (ball.y - ball.radius > getHeight(state)) {
       ball.active = false;
       ball.attached = false;
@@ -727,10 +966,22 @@
       return;
     }
 
+    if (state.activeEffects.magneticPaddleTimeRemaining > 0 && !ball.magneticHold) {
+      ball.attached = true;
+      ball.active = true;
+      ball.magneticHold = 1.5;
+      ball.vx = 0;
+      ball.vy = 0;
+      syncAttachedBalls(state);
+      addFloatingText(state, ball.x, paddle.y - 12, "자석", "#c7f0ff");
+      return;
+    }
+
     var relativeHit = clamp((ball.x - (paddle.x + paddle.width / 2)) / (paddle.width / 2), -1, 1);
     var maxAngle = 68 * Math.PI / 180;
     var angle = relativeHit * maxAngle;
     var speed = getCurrentBallSpeed(state);
+    var classData = getClassData(state);
 
     ball.y = paddle.y - ball.radius - 0.2;
     if (hasRelic(state, "acceleration_core")) {
@@ -742,7 +993,123 @@
     ball.vx = Math.sin(angle) * speed;
     ball.vy = -Math.cos(angle) * speed;
     normalizeBallVelocity(state, ball, speed);
+    if (classData.id === "tuner" && Math.abs(relativeHit) <= (classData.precisionZone || 0.3)) {
+      state.evolutionCounters = state.evolutionCounters || {};
+      state.evolutionCounters.precisionPrimed = Math.max(state.evolutionCounters.precisionPrimed || 0, classData.precisionDamageAdd || 1);
+      state.evolutionCounters.precisionScore = Math.max(state.evolutionCounters.precisionScore || 1, classData.precisionScoreMultiplier || 1.4);
+      if (hasEvolution(state, "perfect_tuning")) {
+        state.evolutionCounters.precisionPrimed = Math.max(state.evolutionCounters.precisionPrimed, 2);
+      }
+      if (hasRelic(state, "mirror_shard") && state.balls.length < getMaxBalls(state) && random(state) < 0.35) {
+        splitBalls(state, 1);
+      }
+      addFloatingText(state, ball.x, paddle.y - 18, "Precision", "#f2c94c");
+    }
     addParticles(state, ball.x, ball.y + ball.radius, "#f3f7ff", 5);
+  }
+
+  function canHitCooldown(state, ball, key, frames) {
+    var lastHitFrame = ball.collisionCooldowns[key] || -99;
+    if (state.time.frame - lastHitFrame < frames) {
+      return false;
+    }
+    ball.collisionCooldowns[key] = state.time.frame;
+    return true;
+  }
+
+  function handleCircleGimmick(state, ball, gimmick, cx, cy, radius) {
+    var dx = ball.x - cx;
+    var dy = ball.y - cy;
+    var limit = ball.radius + radius;
+    var distanceSq = dx * dx + dy * dy;
+
+    if (distanceSq > limit * limit || !canHitCooldown(state, ball, "gimmick:" + gimmick.id, gimmick.collisionCooldown || 10)) {
+      return false;
+    }
+
+    var distance = Math.sqrt(distanceSq) || 1;
+    var nx = dx / distance;
+    var ny = dy / distance;
+    reflect(ball, nx, ny);
+    ball.x = cx + nx * (limit + 0.5);
+    ball.y = cy + ny * (limit + 0.5);
+    ball.speedMultiplier = clamp((ball.speedMultiplier || 1) * (gimmick.speedBoost || 1.03), 1, 1.2);
+    normalizeBallVelocity(state, ball, getBallSpeed(state, ball));
+    if (gimmick.type === "bumper" && hasRelic(state, "bumper_core")) {
+      state.evolutionCounters = state.evolutionCounters || {};
+      state.evolutionCounters.bumperDamageStacks = clamp((state.evolutionCounters.bumperDamageStacks || 0) + 1, 0, 3);
+      addFloatingText(state, cx, cy - radius, "Bumper +" + state.evolutionCounters.bumperDamageStacks, "#65c8ff");
+    }
+    addRingEffect(state, cx, cy, radius + 6, gimmick.type === "spinner" ? "#f2c94c" : "#65c8ff");
+    return true;
+  }
+
+  function handlePortalGimmick(state, ball, gimmick) {
+    var radius = gimmick.radius || 15;
+
+    if (!handleCircleGimmick(state, ball, gimmick, gimmick.entryX, gimmick.entryY, radius)) {
+      return false;
+    }
+
+    ball.x = gimmick.exitX;
+    ball.y = gimmick.exitY;
+    ball.prevX = ball.x;
+    ball.prevY = ball.y;
+    if (hasRelic(state, "portal_resonator")) {
+      state.evolutionCounters = state.evolutionCounters || {};
+      state.evolutionCounters.portalPrimed = Math.max(state.evolutionCounters.portalPrimed || 0, hasEvolution(state, "dimensional_refraction") ? 2 : 1);
+      state.evolutionCounters.portalScore = Math.max(state.evolutionCounters.portalScore || 1, 1.35);
+      if (hasEvolution(state, "dimensional_refraction")) {
+        ball.pierceRemaining = Math.max(ball.pierceRemaining || 0, 1);
+      }
+    }
+    addRingEffect(state, gimmick.exitX, gimmick.exitY, radius + 8, "#b06cff");
+    return true;
+  }
+
+  function handleMirrorGimmick(state, ball, gimmick) {
+    var rect = {
+      x: gimmick.x - gimmick.width / 2,
+      y: gimmick.y - gimmick.height / 2,
+      width: gimmick.width,
+      height: gimmick.height
+    };
+    var collision = circleRectCollision(ball, rect);
+
+    if (!collision || !canHitCooldown(state, ball, "gimmick:" + gimmick.id, gimmick.collisionCooldown || 8)) {
+      return false;
+    }
+
+    reflect(ball, collision.nx, collision.ny);
+    separateBall(ball, rect, collision);
+    normalizeBallVelocity(state, ball);
+    addLineEffect(state, rect.x, rect.y + rect.height / 2, rect.x + rect.width, rect.y + rect.height / 2, "#d8e7ff");
+    return true;
+  }
+
+  function handleGimmickCollisions(state, ball) {
+    for (var index = 0; index < (state.gimmicks || []).length; index++) {
+      var gimmick = state.gimmicks[index];
+
+      if (!gimmick.active) {
+        continue;
+      }
+
+      if (gimmick.type === "bumper" && handleCircleGimmick(state, ball, gimmick, gimmick.x, gimmick.y, gimmick.radius || 15)) {
+        return true;
+      }
+      if (gimmick.type === "spinner" && handleCircleGimmick(state, ball, gimmick, gimmick.x, gimmick.y, gimmick.radius || 16)) {
+        return true;
+      }
+      if (gimmick.type === "portal" && handlePortalGimmick(state, ball, gimmick)) {
+        return true;
+      }
+      if (gimmick.type === "movingMirror" && handleMirrorGimmick(state, ball, gimmick)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function getItemDefinition(id) {
@@ -757,20 +1124,25 @@
 
   function weightedItem(state) {
     var items = Data.ITEMS.definitions.filter(function (item) {
-      return !modeRuleListHas(state, "disabledItems", item.id);
+      return !modeRuleListHas(state, "disabledItems", item.id) && isUnlocked(state, "items", item.id);
     });
 
     if (!items.length) {
       return Data.ITEMS.definitions[0];
     }
 
+    var zone = getZoneData(state.zoneId || getStageData(state).zoneId);
+    var modifiers = zone && zone.itemWeightModifiers || {};
+    var classData = getClassData(state);
     var total = items.reduce(function (sum, item) {
-      return sum + item.weight;
+      var classWeight = item.id === "multi_ball" ? 1 : (classData.itemBrickWeightMultiplier || 1);
+      return sum + item.weight * (modifiers[item.id] || 1) * classWeight;
     }, 0);
-    var roll = Math.random() * total;
+    var roll = random(state) * total;
 
     for (var index = 0; index < items.length; index++) {
-      roll -= items[index].weight;
+      var itemWeight = items[index].weight * (modifiers[items[index].id] || 1) * (items[index].id === "multi_ball" ? 1 : (classData.itemBrickWeightMultiplier || 1));
+      roll -= itemWeight;
 
       if (roll <= 0) {
         return items[index];
@@ -787,7 +1159,7 @@
 
     var chance = clamp(brick.dropChance * getDropMultiplier(state) + getMetaLevel(state, "itemDrop") * 0.015, 0, 1);
 
-    if (state.items.length >= Data.ITEMS.maxActive || (!force && Math.random() > chance)) {
+    if (state.items.length >= Data.ITEMS.maxActive || (!force && random(state) > chance)) {
       return;
     }
 
@@ -836,8 +1208,40 @@
     }
 
     var damage = Math.max(1, Math.floor(amount));
+
+    if (brick.type === "shielded" && brick.shieldActive) {
+      if (source === "explosion") {
+        damage = Math.max(1, Math.floor(damage * 0.5));
+      } else {
+        addFloatingText(state, brick.x + brick.width / 2, brick.y, "보호막", "#d8e7ff");
+        return false;
+      }
+    }
+
     brick.hp = Math.max(0, brick.hp - damage);
     addParticles(state, brick.x + brick.width / 2, brick.y + brick.height / 2, "#ffffff", 4);
+
+    if (source === "direct" || source === "laser") {
+      if (state.evolutionCounters) {
+        if ((state.evolutionCounters.precisionPrimed || 0) > 0 && hasEvolution(state, "perfect_tuning")) {
+          triggerExplosionDamage(state, brick, 1);
+        }
+        if ((state.evolutionCounters.portalPrimed || 0) > 0 && hasEvolution(state, "dimensional_refraction")) {
+          triggerExplosionDamage(state, brick, 1);
+        }
+        state.evolutionCounters.precisionPrimed = 0;
+        state.evolutionCounters.precisionScore = 1;
+        state.evolutionCounters.portalPrimed = 0;
+        state.evolutionCounters.portalScore = 1;
+        state.evolutionCounters.bumperDamageStacks = 0;
+      }
+
+      if (source === "laser" && hasRelic(state, "laser_amplifier") && depth < 2 && random(state) < 0.25) {
+        getAdjacentBricks(state, brick, 1).forEach(function (nearby) {
+          applyDamageToBrick(state, nearby, 1, "laserSplash", depth + 1);
+        });
+      }
+    }
 
     if (brick.hp > 0) {
       return false;
@@ -868,7 +1272,7 @@
     addParticles(state, brick.x + brick.width / 2, brick.y + brick.height / 2, type.fill, 14);
     triggerScreenShake(state, 2.5, 0.08);
 
-    if (depth < 3 && (brick.explosive || (source === "direct" && Math.random() < getDestroyExplosionChance(state)))) {
+    if (depth < (hasEvolution(state, "blast_chain") ? 4 : 3) && (brick.explosive || (source === "direct" && random(state) < getDestroyExplosionChance(state)))) {
       triggerExplosionDamage(state, brick, depth + 1);
     }
 
@@ -880,8 +1284,15 @@
     var cy = sourceBrick.y + sourceBrick.height / 2;
     addRingEffect(state, cx, cy, Math.max(sourceBrick.width, sourceBrick.height) * 1.4, "#ffb15d");
 
-    getAdjacentBricks(state, sourceBrick, 1).forEach(function (brick) {
-      applyDamageToBrick(state, brick, 1, "explosion", depth);
+    if (state.evolutionCounters && state.evolutionCounters.chainedExplosionsThisFrame >= (Data.GIMMICK_LIMITS && Data.GIMMICK_LIMITS.explosionChainPerFrame || 12)) {
+      return;
+    }
+
+    getAdjacentBricks(state, sourceBrick, hasEvolution(state, "blast_chain") ? 2 : 1).forEach(function (brick) {
+      if (state.evolutionCounters) {
+        state.evolutionCounters.chainedExplosionsThisFrame++;
+      }
+      applyDamageToBrick(state, brick, hasEvolution(state, "blast_chain") ? 2 : 1, "explosion", depth);
     });
   }
 
@@ -902,7 +1313,7 @@
       var lastHitFrame = ball.collisionCooldowns[brick.id] || -99;
 
       if (state.time.frame - lastHitFrame < 3) {
-        return;
+        continue;
       }
 
       ball.collisionCooldowns[brick.id] = state.time.frame;
@@ -912,6 +1323,9 @@
       if (canPierce) {
         ball.pierceRemaining -= 1;
         addLineEffect(state, ball.prevX, ball.prevY, ball.x, ball.y, "rgba(160, 255, 240, 0.95)");
+        if (hasEvolution(state, "piercing_nature") && ball.pierceRemaining === 0) {
+          triggerExplosionDamage(state, brick, 1);
+        }
       } else {
         reflect(ball, collision.nx, collision.ny);
         separateBall(ball, brick, collision);
@@ -950,7 +1364,7 @@
     applyDamageToBoss(state, getBrickDamage(state), ball.x, ball.y);
   }
 
-  function applyDamageToBoss(state, amount, x, y) {
+  function applyDamageToBoss(state, amount, x, y, extraMultiplier) {
     var boss = state.boss;
 
     if (!boss || !boss.alive) {
@@ -960,7 +1374,7 @@
     var bossData = getBossData(boss.id);
     var reduction = boss.shieldActive ? bossData.damageReduction : 0;
     var damageMultiplier = (1 + getMetaLevel(state, "bossDamage") * 0.05) * (hasRelic(state, "boss_breaker") ? 1.5 : 1);
-    var damage = Math.max(1, Math.floor(amount * damageMultiplier * (1 - reduction)));
+    var damage = Math.max(1, Math.floor(amount * damageMultiplier * (1 - reduction) * (extraMultiplier || 1)));
 
     boss.hp = Math.max(0, boss.hp - damage);
     addFloatingText(state, x, y, "-" + damage, boss.shieldActive ? "#65c8ff" : "#ffffff");
@@ -1006,6 +1420,7 @@
 
       if (ball.active) {
         handlePaddleCollision(state, ball);
+        handleGimmickCollisions(state, ball);
         handleBossCollision(state, ball);
         handleBrickCollisions(state, ball);
       }
@@ -1018,7 +1433,7 @@
     }).length;
   }
 
-  function splitBalls(state) {
+  function splitBalls(state, forcedCount) {
     var source = state.balls.filter(function (ball) {
       return ball.active && !ball.attached;
     })[0] || state.balls[0];
@@ -1027,7 +1442,7 @@
       return;
     }
 
-    var additions = Math.min(2, getMaxBalls(state) - state.balls.length);
+    var additions = Math.min(forcedCount || 2, getMaxBalls(state) - state.balls.length);
     var baseAngle = Math.atan2(source.vy || -1, source.vx || 0);
 
     for (var index = 0; index < additions; index++) {
@@ -1050,15 +1465,17 @@
       return;
     }
 
+    var durationScale = item.echoDurationScale || 1;
+
     if (item.type === "paddle_expand") {
-      state.paddle.expandTimeRemaining = Data.PADDLE.expandDuration * getDurationMultiplier(state);
+      state.paddle.expandTimeRemaining = Data.PADDLE.expandDuration * getDurationMultiplier(state) * durationScale * (hasRelic(state, "giant_grip") ? 1.2 : 1);
       clampPaddle(state);
       addFloatingText(state, item.x + item.width / 2, item.y, "패들 확장", "#35c98f");
     } else if (item.type === "multi_ball") {
       splitBalls(state);
       addFloatingText(state, item.x + item.width / 2, item.y, "멀티볼", "#f2c94c");
     } else if (item.type === "slow_ball") {
-      state.activeEffects.slowBallTimeRemaining = getItemDefinition("slow_ball").duration * getDurationMultiplier(state);
+      state.activeEffects.slowBallTimeRemaining = getItemDefinition("slow_ball").duration * getDurationMultiplier(state) * durationScale;
       state.balls.forEach(function (ball) {
         if (ball.active && !ball.attached) {
           normalizeBallVelocity(state, ball, getBallSpeed(state, ball));
@@ -1067,7 +1484,37 @@
       addFloatingText(state, item.x + item.width / 2, item.y, "감속", "#65c8ff");
     }
 
-    state.runStats.itemsCollected = (state.runStats.itemsCollected || 0) + 1;
+    if (item.type === "magnetic_paddle") {
+      state.activeEffects.magneticPaddleTimeRemaining = getItemDefinition("magnetic_paddle").duration * getDurationMultiplier(state) * durationScale;
+      addFloatingText(state, item.x + item.width / 2, item.y, "자석", "#c7f0ff");
+    } else if (item.type === "laser_paddle") {
+      state.activeEffects.laserPaddleTimeRemaining = getItemDefinition("laser_paddle").duration * getDurationMultiplier(state) * durationScale;
+      state.activeEffects.laserCooldown = 0;
+      addFloatingText(state, item.x + item.width / 2, item.y, "레이저", "#ff8da1");
+    } else if (item.type === "bottom_barrier") {
+      state.activeEffects.bottomBarrierTimeRemaining = getItemDefinition("bottom_barrier").duration * getDurationMultiplier(state) * durationScale;
+      state.activeEffects.bottomBarrierDurability = Math.max(state.activeEffects.bottomBarrierDurability || 0, (getItemDefinition("bottom_barrier").value || 3) + (hasRelic(state, "void_safety_net") ? 2 : 0));
+      addFloatingText(state, item.x + item.width / 2, item.y, "보호막", "#9ee6a8");
+    }
+
+    if (!item.virtual) {
+      state.runStats.itemsCollected = (state.runStats.itemsCollected || 0) + 1;
+    }
+    if (state.evolutionCounters && !item.virtual) {
+      state.evolutionCounters.itemsCollected = (state.evolutionCounters.itemsCollected || 0) + 1;
+      if (hasEvolution(state, "item_bloom") && state.evolutionCounters.itemsCollected % 3 === 0) {
+        applyItem(state, { type: weightedItem(state).id, x: item.x, y: item.y, width: item.width, height: item.height, color: item.color, virtual: true });
+      }
+      if (hasEvolution(state, "alchemy_bloom") && getItemDefinition(item.type).duration && random(state) < 0.4) {
+        var timedItems = Data.ITEMS.definitions.filter(function (definition) {
+          return definition.id !== item.type && definition.duration && isUnlocked(state, "items", definition.id) && !modeRuleListHas(state, "disabledItems", definition.id);
+        });
+        if (timedItems.length) {
+          var echoed = timedItems[Math.floor(random(state) * timedItems.length)];
+          applyItem(state, { type: echoed.id, x: item.x, y: item.y, width: item.width, height: item.height, color: echoed.color, virtual: true, echoDurationScale: 0.4 });
+        }
+      }
+    }
     if (state.runStats.itemsCollected >= 20) {
       triggerAchievement(state, "collector");
     }
@@ -1115,6 +1562,53 @@
     syncAttachedBalls(state);
   }
 
+  function releaseAttachedBall(state, ball) {
+    var speed = getCurrentBallSpeed(state);
+    ball.attached = false;
+    ball.active = true;
+    ball.magneticHold = 0;
+    ball.x = state.paddle.x + state.paddle.width / 2;
+    ball.y = state.paddle.y - ball.radius - 2;
+    ball.vx = Math.sin(0.18) * speed;
+    ball.vy = -Math.cos(0.18) * speed;
+    normalizeBallVelocity(state, ball, speed);
+  }
+
+  function firePaddleLaser(state) {
+    var x = state.paddle.x + state.paddle.width / 2;
+    var target = null;
+
+    state.bricks.some(function (brick) {
+      if (!brick.alive || !brick.destructible || brick.type === "wall") {
+        return false;
+      }
+      if (x >= brick.x && x <= brick.x + brick.width) {
+        target = brick;
+        return true;
+      }
+      return false;
+    });
+
+    addLimited(state.effects, {
+      type: "laser",
+      x1: x,
+      y1: state.paddle.y,
+      x2: x,
+      y2: target ? target.y + target.height : 18,
+      color: "#ff8da1",
+      age: 0,
+      life: 0.12
+    }, Data.GIMMICK_LIMITS && Data.GIMMICK_LIMITS.lasers || 12);
+
+    if (target && !(target.type === "shielded" && target.shieldActive)) {
+      applyDamageToBrick(state, target, 1, "laser", 0);
+    }
+
+    if (state.boss && state.boss.alive && x >= state.boss.x && x <= state.boss.x + state.boss.width) {
+      applyDamageToBoss(state, 1, x, state.boss.y + state.boss.height / 2, 0.45);
+    }
+  }
+
   function updateTimers(state, dt) {
     if (state.paddle.expandTimeRemaining > 0) {
       state.paddle.expandTimeRemaining = Math.max(0, state.paddle.expandTimeRemaining - dt);
@@ -1137,6 +1631,75 @@
           }
         });
       }
+    }
+
+    if (state.activeEffects.magneticPaddleTimeRemaining > 0) {
+      state.activeEffects.magneticPaddleTimeRemaining = Math.max(0, state.activeEffects.magneticPaddleTimeRemaining - dt);
+    }
+
+    if (state.activeEffects.bottomBarrierTimeRemaining > 0) {
+      state.activeEffects.bottomBarrierTimeRemaining = Math.max(0, state.activeEffects.bottomBarrierTimeRemaining - dt);
+      if (state.activeEffects.bottomBarrierTimeRemaining === 0) {
+        state.activeEffects.bottomBarrierDurability = 0;
+      }
+    }
+
+    if (state.activeEffects.laserPaddleTimeRemaining > 0) {
+      state.activeEffects.laserPaddleTimeRemaining = Math.max(0, state.activeEffects.laserPaddleTimeRemaining - dt);
+      state.activeEffects.laserCooldown = Math.max(0, (state.activeEffects.laserCooldown || 0) - dt);
+      if (state.activeEffects.laserCooldown === 0) {
+        firePaddleLaser(state);
+        state.activeEffects.laserCooldown = getItemDefinition("laser_paddle").value || 0.4;
+      }
+    }
+
+    state.balls.forEach(function (ball) {
+      if (ball.attached && ball.magneticHold > 0) {
+        ball.magneticHold = Math.max(0, ball.magneticHold - dt);
+        if (ball.magneticHold === 0) {
+          releaseAttachedBall(state, ball);
+        }
+      }
+    });
+  }
+
+  function updateGimmicks(state, dt) {
+    (state.gimmicks || []).forEach(function (gimmick) {
+      if (!gimmick.active) {
+        return;
+      }
+
+      if (gimmick.type === "movingMirror") {
+        var value = gimmick.axis === "y" ? gimmick.y : gimmick.x;
+        value += (gimmick.moveSpeed || 40) * (gimmick.direction || 1) * dt;
+        if (value < gimmick.minPosition) {
+          value = gimmick.minPosition;
+          gimmick.direction = 1;
+        } else if (value > gimmick.maxPosition) {
+          value = gimmick.maxPosition;
+          gimmick.direction = -1;
+        }
+        if (gimmick.axis === "y") {
+          gimmick.y = value;
+        } else {
+          gimmick.x = value;
+        }
+      } else if (gimmick.type === "spinner") {
+        gimmick.angle += (gimmick.angleSpeed || 1) * dt;
+      }
+    });
+
+    state.bricks.forEach(function (brick) {
+      var type = Data.BRICK_TYPES[brick.type];
+      if (!brick.alive || brick.type !== "shielded" || !type) {
+        return;
+      }
+      brick.shieldTimer = (brick.shieldTimer + dt) % (type.shieldCycle || 4.8);
+      brick.shieldActive = brick.shieldTimer <= (type.shieldDuration || 2.2);
+    });
+
+    if (state.evolutionCounters) {
+      state.evolutionCounters.chainedExplosionsThisFrame = 0;
     }
   }
 
@@ -1202,7 +1765,7 @@
 
     for (var i = 0; i < count && countBossSpawnedBricks(state) < bossData.maxSpawnedBricks; i++) {
       var row = 0;
-      var col = Math.floor(Math.random() * layout.columns);
+      var col = Math.floor(random(state) * layout.columns);
       var attempts = 0;
 
       while (existing[row + ":" + col] && attempts < layout.columns * 3) {
@@ -1214,7 +1777,7 @@
         continue;
       }
 
-      var symbol = boss.id === "core" ? (Math.random() < 0.45 ? "3" : "2") : (Math.random() < 0.3 ? "2" : "1");
+      var symbol = boss.id === "core" ? (random(state) < 0.45 ? "3" : "2") : (random(state) < 0.3 ? "2" : "1");
       var brick = createBrick(state, row, col, symbol, true);
       existing[row + ":" + col] = true;
       state.bricks.push(brick);
@@ -1232,7 +1795,13 @@
 
     var bossData = getBossData(boss.id);
     var hpRatio = boss.hp / Math.max(1, boss.maxHp);
+    var nextPhase = hpRatio <= 0.33 ? 2 : hpRatio <= 0.66 ? 1 : 0;
     var speed = (hpRatio <= 0.5 ? bossData.enragedMoveSpeed : bossData.moveSpeed) * (boss.speedMultiplier || 1);
+
+    if (nextPhase > (boss.phase || 0)) {
+      boss.phase = nextPhase;
+      enterBossPhase(state, boss, nextPhase);
+    }
 
     boss.vx = Math.sign(boss.vx || 1) * speed;
     boss.x += boss.vx * dt;
@@ -1248,15 +1817,48 @@
     state.bossTimers.spawn -= dt;
 
     if (state.bossTimers.spawn <= 0) {
-      var spawnCount = bossData.spawnCountMin + Math.floor(Math.random() * (bossData.spawnCountMax - bossData.spawnCountMin + 1));
+      var spawnCount = bossData.spawnCountMin + Math.floor(random(state) * (bossData.spawnCountMax - bossData.spawnCountMin + 1));
       spawnBossBricks(state, spawnCount);
       state.bossTimers.spawn = boss.spawnInterval || bossData.spawnInterval;
     }
 
-    if (boss.id === "core") {
+    if (bossData.shieldCycle) {
       state.bossTimers.shield = (state.bossTimers.shield + dt) % bossData.shieldCycle;
       boss.shieldActive = state.bossTimers.shield <= bossData.shieldDuration;
     }
+  }
+
+  function addBossGimmick(state, source) {
+    if (!source) {
+      return;
+    }
+    var gimmick = JSON.parse(JSON.stringify(source));
+    gimmick.id = "boss:" + state.stage + ":" + (state.gimmicks.length + 1);
+    gimmick.active = true;
+    gimmick.cooldowns = {};
+    gimmick.direction = gimmick.direction || 1;
+    gimmick.collisionCooldown = gimmick.collisionCooldown || 10;
+    state.gimmicks.push(gimmick);
+    relayoutGimmicks(state);
+  }
+
+  function enterBossPhase(state, boss, phase) {
+    if (boss.id === "sentinel") {
+      if (phase >= 1) {
+        addBossGimmick(state, { type: "portal", pairId: "sentinel", entry: { xRatio: 0.2, yRatio: 0.48 }, exit: { xRatio: 0.8, yRatio: 0.34 }, radius: 14 });
+      }
+      boss.shieldActive = true;
+      state.bossTimers.shield = 0;
+    } else if (boss.id === "core") {
+      if (phase === 1) {
+        spawnBossBricks(state, 2);
+        addBossGimmick(state, { type: "portal", pairId: "core", entry: { xRatio: 0.16, yRatio: 0.52 }, exit: { xRatio: 0.84, yRatio: 0.36 }, radius: 14 });
+      } else if (phase === 2) {
+        addBossGimmick(state, { type: "spinner", xRatio: 0.5, yRatio: 0.5, radius: 18, angleSpeed: 1.5 });
+        addBossGimmick(state, { type: "movingMirror", axis: "x", xRatio: 0.5, yRatio: 0.62, widthRatio: 0.26, height: 8, minRatio: 0.18, maxRatio: 0.82, moveSpeed: 64 });
+      }
+    }
+    addFloatingText(state, getWidth(state) / 2, 88, "보스 페이즈 " + (phase + 1), "#f2c94c");
   }
 
   function hasLivingDestructibleBrick(state) {
@@ -1392,12 +1994,49 @@
     return Math.max(1, Math.floor(reward * getGameModeData(state).stoneMultiplier));
   }
 
+  function grantDailyRewards(state, runClear) {
+    if (!state.rng || !state.rng.dailyDate || !state.persistent.dailyChallenge) {
+      return 0;
+    }
+
+    var dateKey = state.rng.dailyDate;
+    var daily = state.persistent.dailyChallenge;
+    var rewards = daily.rewards[dateKey] || {};
+    var gained = 0;
+
+    if (!rewards.participate) {
+      rewards.participate = true;
+      gained += 3;
+    }
+    if (!rewards.stage5 && (state.highestStageReached || state.stage || 1) >= 5) {
+      rewards.stage5 = true;
+      gained += 5;
+    }
+    if (!rewards.clear && runClear) {
+      rewards.clear = true;
+      gained += 10;
+    }
+
+    daily.lastDate = dateKey;
+    daily.rewards[dateKey] = rewards;
+    daily.records[dateKey] = daily.records[dateKey] || { bestScore: 0, bestStage: 1, clearCount: 0 };
+    daily.records[dateKey].bestScore = Math.max(daily.records[dateKey].bestScore || 0, state.score || 0);
+    daily.records[dateKey].bestStage = Math.max(daily.records[dateKey].bestStage || 1, state.highestStageReached || state.stage || 1);
+    if (runClear) {
+      daily.records[dateKey].clearCount = Math.max(0, daily.records[dateKey].clearCount || 0) + 1;
+    }
+
+    return gained;
+  }
+
   function grantRunReward(state, runClear) {
     if (state.flags.runRewardGranted) {
       return state.earnedAbyssStones || 0;
     }
 
     var reward = calculateAbyssReward(state, !!runClear);
+    var dailyReward = grantDailyRewards(state, !!runClear);
+    reward += dailyReward;
 
     state.flags.runRewardGranted = true;
     state.earnedAbyssStones = reward;
@@ -1420,6 +2059,7 @@
       State.unlockAllModes();
     }
 
+    State.clearActiveRun();
     emitFeedback(runClear ? "confirm" : "tap", runClear ? [24, 40, 24] : 18);
 
     return reward;
@@ -1428,12 +2068,12 @@
   function createRelicChoices() {
     var state = State.getRunState();
     var pool = Data.RELICS.filter(function (relic) {
-      return !hasRelic(state, relic.id) && !modeRuleListHas(state, "disabledRelics", relic.id);
+      return !hasRelic(state, relic.id) && !modeRuleListHas(state, "disabledRelics", relic.id) && isUnlocked(state, "relics", relic.id);
     });
     var choices = [];
 
     while (choices.length < 3 && pool.length) {
-      var index = Math.floor(Math.random() * pool.length);
+      var index = Math.floor(random(state) * pool.length);
       choices.push(pool.splice(index, 1)[0]);
     }
 
@@ -1452,6 +2092,7 @@
     state.upgrades.selectionLocked = false;
     State.setMode(Data.MODES.RELIC);
     state.flags.needsHudUpdate = true;
+    State.saveActiveRun(state, Data.MODES.RELIC);
   }
 
   function enterStageClear(state) {
@@ -1521,10 +2162,15 @@
       return;
     }
 
-    if (hasRelic(state, "guardian_field") && !state.stageRelicFlags.guardianSaved) {
+    if ((hasRelic(state, "guardian_field") || hasEvolution(state, "aegis_guard")) && !state.stageRelicFlags.guardianSaved) {
       state.stageRelicFlags.guardianSaved = true;
       state.flags.lifeLostHandled = false;
       resetBallToPaddle(state);
+      if (hasEvolution(state, "aegis_guard")) {
+        state.paddle.expandTimeRemaining = Math.max(state.paddle.expandTimeRemaining || 0, 6);
+        clampPaddle(state);
+        syncAttachedBalls(state);
+      }
       addFloatingText(state, getWidth(state) / 2, getHeight(state) * 0.58, "수호 역장", "#65c8ff");
       State.setMode(Data.MODES.READY);
       state.flags.needsHudUpdate = true;
@@ -1554,7 +2200,7 @@
       return ball.active || ball.attached;
     });
 
-    if (state.mode === Data.MODES.PLAYING && activeBallCount(state) === 0) {
+    if (state.mode === Data.MODES.PLAYING && activeBallCount(state) === 0 && !state.balls.some(function (ball) { return ball.attached && ball.active; })) {
       loseLife(state);
     }
   }
@@ -1625,11 +2271,11 @@
     });
   }
 
-  function pickWeightedUpgrade(candidates) {
+  function pickWeightedUpgrade(state, candidates) {
     var total = candidates.reduce(function (sum, upgrade) {
       return sum + Math.max(0, upgrade.weight);
     }, 0);
-    var roll = Math.random() * total;
+    var roll = random(state) * total;
 
     for (var index = 0; index < candidates.length; index++) {
       roll -= Math.max(0, candidates[index].weight);
@@ -1647,7 +2293,7 @@
     var choices = [];
 
     while (choices.length < 3 && candidates.length) {
-      var selected = pickWeightedUpgrade(candidates);
+      var selected = pickWeightedUpgrade(state, candidates);
 
       if (!selected) {
         break;
@@ -1671,6 +2317,69 @@
     return choices;
   }
 
+  function checkEvolutions(state) {
+    var activated = [];
+
+    (Data.EVOLUTIONS || []).forEach(function (evolution) {
+      var ok = true;
+
+      if (state.activeEvolutions && state.activeEvolutions[evolution.id]) {
+        return;
+      }
+
+      if (!isUnlocked(state, "evolutions", evolution.id)) {
+        return;
+      }
+
+      if (evolution.requiredClass && getClassData(state).id !== evolution.requiredClass) {
+        ok = false;
+      }
+
+      if (evolution.requiredZone && state.zoneId !== evolution.requiredZone) {
+        ok = false;
+      }
+
+      Object.keys(evolution.requiredUpgrades || {}).forEach(function (upgradeId) {
+        if (getUpgradeLevel(state, upgradeId) < evolution.requiredUpgrades[upgradeId]) {
+          ok = false;
+        }
+      });
+
+      (evolution.requiredEvolutions || []).forEach(function (evolutionId) {
+        if (!hasEvolution(state, evolutionId)) {
+          ok = false;
+        }
+      });
+
+      (evolution.requiredItems || []).forEach(function (itemId) {
+        if (!isUnlocked(state, "items", itemId)) {
+          ok = false;
+        }
+      });
+
+      (evolution.requiredRelics || []).forEach(function (relicId) {
+        if (!hasRelic(state, relicId)) {
+          ok = false;
+        }
+      });
+
+      if (!ok) {
+        return;
+      }
+
+      state.activeEvolutions = state.activeEvolutions || {};
+      state.activeEvolutions[evolution.id] = true;
+      activated.push(evolution.name);
+      addFloatingText(state, getWidth(state) / 2, 132 + activated.length * 18, "능력 진화: " + evolution.name, "#f2c94c");
+    });
+
+    if (activated.length) {
+      state.flags.needsHudUpdate = true;
+    }
+
+    return activated;
+  }
+
   function enterUpgradeState(state) {
     var runState = getState(state);
 
@@ -1688,6 +2397,95 @@
     runState.upgrades.pending = choices;
     runState.upgrades.selectionLocked = false;
     State.setMode(Data.MODES.UPGRADE);
+    State.saveActiveRun(runState, Data.MODES.UPGRADE);
+    return true;
+  }
+
+  function buildUpgradeChoicesFromIds(state, ids) {
+    return ids.map(function (id) {
+      var upgrade = getUpgradeById(id);
+
+      if (!upgrade) {
+        return null;
+      }
+
+      var level = getUpgradeLevel(state, upgrade.id);
+      return {
+        id: upgrade.id,
+        name: upgrade.name,
+        description: upgrade.description,
+        category: upgrade.category,
+        level: level,
+        nextLevel: level + 1,
+        maxLevel: upgrade.maxLevel
+      };
+    }).filter(Boolean);
+  }
+
+  function buildRelicChoicesFromIds(ids) {
+    return ids.map(function (id) {
+      return getRelicById(id);
+    }).filter(Boolean);
+  }
+
+  function restoreActiveRun() {
+    var state = State.getRunState();
+    var checkpoint = state.persistent && state.persistent.activeRun;
+
+    if (!checkpoint) {
+      return false;
+    }
+
+    var runState = State.restartRun();
+
+    runState.stage = checkpoint.stage;
+    runState.score = checkpoint.score;
+    runState.lives = checkpoint.lives;
+    runState.maxLives = checkpoint.maxLives;
+    runState.selectedClassId = checkpoint.selectedClassId;
+    runState.gameModeId = checkpoint.gameModeId;
+    runState.gameModeRules = JSON.parse(JSON.stringify((Data.GAME_MODES[checkpoint.gameModeId] || Data.GAME_MODES.standard).rules || {}));
+    runState.runStartedAt = Date.now() - Math.floor((checkpoint.runElapsedTime || 0) * 1000);
+    runState.runElapsedTime = checkpoint.runElapsedTime || 0;
+    runState.runStats = JSON.parse(JSON.stringify(checkpoint.runStats || runState.runStats));
+    runState.highestStageReached = checkpoint.highestStageReached || checkpoint.stage;
+    runState.bossesDefeated = checkpoint.bossesDefeated || 0;
+    runState.earnedAbyssStones = 0;
+    runState.selectedRelicIds = Array.isArray(checkpoint.selectedRelicIds) ? checkpoint.selectedRelicIds.slice() : [];
+    runState.selectedRelicId = runState.selectedRelicIds[0] || null;
+    runState.activeEvolutions = JSON.parse(JSON.stringify(checkpoint.activeEvolutions || {}));
+    runState.evolutionCounters = JSON.parse(JSON.stringify(checkpoint.evolutionCounters || { itemsCollected: 0, chainedExplosionsThisFrame: 0 }));
+    runState.evolutionCounters.precisionScore = runState.evolutionCounters.precisionScore || 1;
+    runState.evolutionCounters.portalScore = runState.evolutionCounters.portalScore || 1;
+    runState.runModifiers = JSON.parse(JSON.stringify(checkpoint.runModifiers || {}));
+    runState.rng = checkpoint.rng ? JSON.parse(JSON.stringify(checkpoint.rng)) : null;
+    runState.zoneId = checkpoint.zoneId || null;
+    runState.relicCounters = JSON.parse(JSON.stringify(checkpoint.relicCounters || { bricksDestroyed: 0 }));
+    runState.stageRelicFlags = { guardianSaved: false, voidSaved: false };
+    runState.flags.runRewardGranted = false;
+    runState.flags.runStarted = true;
+    runState.upgrades.levels = JSON.parse(JSON.stringify(checkpoint.upgradeLevels || runState.upgrades.levels));
+    runState.upgrades.chosen = Array.isArray(checkpoint.chosenUpgrades) ? checkpoint.chosenUpgrades.slice() : [];
+    runState.counters.nextBallId = 1;
+    runState.counters.nextBrickId = 1;
+    runState.counters.nextItemId = 1;
+
+    if (checkpoint.phase === Data.MODES.READY) {
+      startStage(runState);
+    } else if (checkpoint.phase === Data.MODES.UPGRADE) {
+      runState.upgrades.pending = buildUpgradeChoicesFromIds(runState, checkpoint.pendingUpgradeIds || []);
+      runState.upgrades.selectionLocked = false;
+      State.setMode(Data.MODES.UPGRADE);
+      State.saveActiveRun(runState, Data.MODES.UPGRADE);
+    } else if (checkpoint.phase === Data.MODES.RELIC) {
+      runState.upgrades.pending = [];
+      runState.upgrades.selectionLocked = false;
+      runState.relicChoices = buildRelicChoicesFromIds(checkpoint.pendingRelicIds || []);
+      State.setMode(Data.MODES.RELIC);
+      State.saveActiveRun(runState, Data.MODES.RELIC);
+    }
+
+    runState.flags.needsHudUpdate = true;
     return true;
   }
 
@@ -1716,6 +2514,7 @@
     runState.selectedRelicId = runState.selectedRelicIds[0] || relicId;
     runState.runStats.relicsSelected = (runState.runStats.relicsSelected || 0) + 1;
     runState.relicChoices = [];
+    checkEvolutions(runState);
     runState.stage += 1;
     startStage(runState);
     return true;
@@ -1763,6 +2562,7 @@
     runState.upgrades.pending = [];
     runState.runStats.upgradesSelected = (runState.runStats.upgradesSelected || 0) + 1;
     applyUpgradeEffect(runState, upgrade);
+    checkEvolutions(runState);
     startNextStage(runState);
     return true;
   }
@@ -1774,6 +2574,21 @@
     runState.time.delta = delta;
     runState.time.elapsed += delta;
     runState.time.frame++;
+    if (runState.tutorial && runState.tutorial.active) {
+      if (runState.mode === Data.MODES.PLAYING && runState.tutorial.step < 1) {
+        runState.tutorial.step = 1;
+      }
+      if ((runState.runStats.bricksDestroyed || 0) > 0 && runState.tutorial.step < 2) {
+        runState.tutorial.step = 2;
+      }
+      if ((runState.runStats.itemsCollected || 0) > 0 && runState.tutorial.step < 3) {
+        runState.tutorial.step = 3;
+      }
+      if (runState.mode === Data.MODES.UPGRADE && runState.tutorial.step < 4) {
+        runState.tutorial.step = 4;
+        State.completeTutorial(false);
+      }
+    }
     updateVisualEffects(runState, delta);
 
     if (runState.flags.runStarted && (runState.mode === Data.MODES.READY || runState.mode === Data.MODES.PLAYING)) {
@@ -1800,6 +2615,7 @@
 
     if (runState.mode === Data.MODES.PLAYING) {
       updateTimers(runState, delta);
+      updateGimmicks(runState, delta);
       updateItems(runState, delta);
       updateBoss(runState, delta);
       updateRunMaxBalls(runState);
@@ -1833,6 +2649,7 @@
     enterUpgradeState: enterUpgradeState,
     chooseUpgrade: chooseUpgrade,
     chooseRelic: chooseRelic,
+    restoreActiveRun: restoreActiveRun,
     grantRunReward: grantRunReward,
     calculateAbyssReward: calculateAbyssReward,
     movePaddleTo: movePaddleTo,
