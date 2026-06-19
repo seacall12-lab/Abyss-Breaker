@@ -40,6 +40,9 @@
     var cssWidth = rect.width || canvas.clientWidth || Data.CANVAS.designWidth;
     var cssHeight = rect.height || canvas.clientHeight || Data.CANVAS.designHeight;
     var dpr = clamp(global.devicePixelRatio || 1, 1, Data.CANVAS.maxDevicePixelRatio);
+    if (Data.CANVAS.maxPixelCount) {
+      dpr = Math.min(dpr, Math.sqrt(Data.CANVAS.maxPixelCount / Math.max(1, cssWidth * cssHeight)));
+    }
     var pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
     var pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
 
@@ -84,9 +87,10 @@
     var height = state.viewport.cssHeight;
     var stage = Game.getStageData ? Game.getStageData(state) : null;
     var variant = stage ? stage.backgroundVariant : 0;
+    var zoneId = state.zoneId || (stage && stage.zoneId);
     var gradient = ctx.createLinearGradient(0, 0, 0, height);
 
-    gradient.addColorStop(0, variant % 3 === 0 ? "#071e25" : (variant % 3 === 1 ? "#101b2b" : "#15172a"));
+    gradient.addColorStop(0, zoneId === "core" ? "#1b1026" : zoneId === "rift" ? "#241417" : zoneId === "corridor" ? "#101b2b" : (variant % 3 === 0 ? "#071e25" : "#101b2b"));
     gradient.addColorStop(0.42, "#0b1218");
     gradient.addColorStop(1, "#07090d");
     ctx.fillStyle = gradient;
@@ -120,7 +124,7 @@
     ctx.fillStyle = type.fill;
     ctx.fill();
     ctx.strokeStyle = type.stroke;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = brick.shieldActive ? 3 : 1;
     ctx.stroke();
 
     ctx.fillStyle = "rgba(0, 0, 0, 0.26)";
@@ -132,7 +136,7 @@
     ctx.font = "900 13px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(type.label || String(Math.max(0, brick.hp)), brick.x + brick.width / 2, brick.y + brick.height / 2 - 1);
+    ctx.fillText(brick.shieldActive ? "◎" : (type.label || String(Math.max(0, brick.hp))), brick.x + brick.width / 2, brick.y + brick.height / 2 - 1);
     ctx.restore();
   }
 
@@ -161,6 +165,72 @@
     ctx.restore();
   }
 
+  function drawGimmicks(ctx, state) {
+    (state.gimmicks || []).forEach(function (gimmick) {
+      if (!gimmick.active) {
+        return;
+      }
+
+      ctx.save();
+      if (gimmick.type === "bumper") {
+        ctx.strokeStyle = "#65c8ff";
+        ctx.fillStyle = "rgba(101, 200, 255, 0.18)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(gimmick.x, gimmick.y, gimmick.radius || 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (gimmick.type === "portal") {
+        ctx.strokeStyle = "#b06cff";
+        ctx.lineWidth = 3;
+        [0, 1].forEach(function (index) {
+          var x = index ? gimmick.exitX : gimmick.entryX;
+          var y = index ? gimmick.exitY : gimmick.entryY;
+          ctx.beginPath();
+          ctx.arc(x, y, gimmick.radius || 15, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+      } else if (gimmick.type === "movingMirror") {
+        ctx.fillStyle = "rgba(216, 231, 255, 0.72)";
+        roundedRect(ctx, gimmick.x - gimmick.width / 2, gimmick.y - gimmick.height / 2, gimmick.width, gimmick.height, 4);
+        ctx.fill();
+      } else if (gimmick.type === "spinner") {
+        ctx.translate(gimmick.x, gimmick.y);
+        ctx.rotate(gimmick.angle || 0);
+        ctx.strokeStyle = "#f2c94c";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-(gimmick.radius || 16), 0);
+        ctx.lineTo(gimmick.radius || 16, 0);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#f2c94c";
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawBottomBarrier(ctx, state) {
+    if (!state.activeEffects || state.activeEffects.bottomBarrierDurability <= 0) {
+      return;
+    }
+
+    var y = state.viewport.cssHeight - 8;
+    ctx.save();
+    ctx.strokeStyle = "#9ee6a8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(14, y);
+    ctx.lineTo(state.viewport.cssWidth - 14, y);
+    ctx.stroke();
+    ctx.fillStyle = "#9ee6a8";
+    ctx.font = "900 11px system-ui, sans-serif";
+    ctx.fillText(String(state.activeEffects.bottomBarrierDurability), state.viewport.cssWidth - 24, y - 8);
+    ctx.restore();
+  }
+
   function drawBall(ctx, ball) {
     if (!ball.active) {
       return;
@@ -172,7 +242,7 @@
     ctx.fillStyle = ball.attached ? "#dcefff" : "#ffffff";
     ctx.fill();
     ctx.strokeStyle = "#65c8ff";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Data.BALL.strokeWidth || 1.5;
     ctx.stroke();
     ctx.restore();
   }
@@ -283,6 +353,13 @@
         ctx.moveTo(effect.x1, effect.y1);
         ctx.lineTo(effect.x2, effect.y2);
         ctx.stroke();
+      } else if (effect.type === "laser") {
+        ctx.strokeStyle = effect.color || "#ff8da1";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(effect.x1, effect.y1);
+        ctx.lineTo(effect.x2, effect.y2);
+        ctx.stroke();
       } else if (effect.type === "ring") {
         ctx.strokeStyle = effect.color;
         ctx.lineWidth = 2;
@@ -365,9 +442,11 @@
     ctx.translate(shake.x, shake.y);
     drawBoss(ctx, runState);
     drawBricks(ctx, runState);
+    drawGimmicks(ctx, runState);
     drawReadyCue(ctx, runState);
     drawItems(ctx, runState);
     drawPaddle(ctx, runState);
+    drawBottomBarrier(ctx, runState);
     drawBalls(ctx, runState);
     if (!runState.persistent || !runState.persistent.settings || !runState.persistent.settings.reducedEffects) {
       drawEffects(ctx, runState);
