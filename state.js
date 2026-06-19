@@ -30,6 +30,10 @@
     return Math.max(0, finiteNumber(value, fallback));
   }
 
+  function positiveInt(value, fallback) {
+    return Math.max(1, Math.floor(finiteNumber(value, fallback)));
+  }
+
   function clampInt(value, min, max, fallback) {
     return Math.max(min, Math.min(max, nonNegativeInt(value, fallback)));
   }
@@ -69,6 +73,103 @@
     });
 
     result.standard = true;
+    return result;
+  }
+
+  function createUnlockDefaults(defaults) {
+    var unlocks = clone(defaults.unlocks || {});
+    unlocks.classes = unlocks.classes || {};
+    unlocks.items = unlocks.items || {};
+    unlocks.relics = unlocks.relics || {};
+    unlocks.evolutions = unlocks.evolutions || {};
+    unlocks.modes = unlocks.modes || {};
+    return unlocks;
+  }
+
+  function sanitizeUnlockGroup(value, defaults, ids, forceUnlockedIds) {
+    var result = clone(defaults || {});
+    var forced = forceUnlockedIds || [];
+
+    ids.forEach(function (id) {
+      result[id] = isObject(value) && typeof value[id] === "boolean" ? value[id] : !!result[id];
+    });
+
+    forced.forEach(function (id) {
+      result[id] = true;
+    });
+
+    return result;
+  }
+
+  function sanitizeUnlocks(value, defaults, unlockedClasses, unlockedModes, legacyRunClearCount) {
+    var base = createUnlockDefaults(defaults);
+    var result = createUnlockDefaults(defaults);
+    var legacyCleared = nonNegativeInt(legacyRunClearCount, 0) > 0;
+    var itemIds = Data.ITEMS.definitions.map(function (item) { return item.id; });
+    var relicIds = Data.RELICS.map(function (relic) { return relic.id; });
+    var evolutionIds = (Data.EVOLUTIONS || []).map(function (evolution) { return evolution.id; });
+
+    result.classes = sanitizeUnlockGroup(isObject(value) ? value.classes : null, base.classes, Object.keys(Data.CLASSES), ["balanced"]);
+    result.modes = sanitizeUnlockGroup(isObject(value) ? value.modes : null, base.modes, Data.GAME_MODE_ORDER, ["standard"]);
+    result.items = sanitizeUnlockGroup(isObject(value) ? value.items : null, base.items, itemIds, ["paddle_expand", "multi_ball", "slow_ball", "magnetic_paddle", "laser_paddle", "bottom_barrier"]);
+    result.relics = sanitizeUnlockGroup(isObject(value) ? value.relics : null, base.relics, relicIds, ["twin_core", "blast_insignia", "piercing_crystal", "collector_mark", "guardian_field", "boss_breaker", "acceleration_core", "focused_lens"]);
+    result.evolutions = sanitizeUnlockGroup(isObject(value) ? value.evolutions : null, base.evolutions, evolutionIds, ["split_storm", "blast_chain", "piercing_nature", "last_focus", "aegis_guard", "item_bloom"]);
+
+    Object.keys(unlockedClasses || {}).forEach(function (classId) {
+      if (unlockedClasses[classId]) {
+        result.classes[classId] = true;
+      }
+    });
+    Object.keys(unlockedModes || {}).forEach(function (modeId) {
+      if (unlockedModes[modeId]) {
+        result.modes[modeId] = true;
+      }
+    });
+
+    if (result.classes.alchemist) {
+      result.relics.alchemist_star = true;
+      result.evolutions.alchemy_bloom = true;
+    }
+    if (result.classes.tuner) {
+      result.relics.mirror_shard = true;
+      result.relics.precision_tuner = true;
+      result.evolutions.perfect_tuning = true;
+    }
+    if (legacyCleared || result.modes.endless) {
+      ["portal_resonator", "bumper_core", "giant_grip"].forEach(function (id) { result.relics[id] = true; });
+      result.evolutions.dimensional_refraction = true;
+      result.modes.daily = true;
+    }
+    if (result.items.bottom_barrier) {
+      result.relics.void_safety_net = true;
+      result.evolutions.abyss_rebirth = true;
+    }
+    if (result.items.laser_paddle) {
+      result.relics.laser_amplifier = true;
+    }
+
+    result.classes.balanced = true;
+    result.modes.standard = true;
+    return result;
+  }
+
+  function sanitizeTutorial(value, defaults) {
+    return {
+      completed: isObject(value) && typeof value.completed === "boolean" ? value.completed : !!defaults.tutorial.completed,
+      skipped: isObject(value) && typeof value.skipped === "boolean" ? value.skipped : !!defaults.tutorial.skipped
+    };
+  }
+
+  function sanitizeDailyChallenge(value) {
+    var result = { lastDate: "", records: {}, rewards: {} };
+
+    if (!isObject(value)) {
+      return result;
+    }
+
+    result.lastDate = typeof value.lastDate === "string" ? value.lastDate : "";
+    result.records = isObject(value.records) ? clone(value.records) : {};
+    result.rewards = isObject(value.rewards) ? clone(value.rewards) : {};
     return result;
   }
 
@@ -152,6 +253,189 @@
     };
   }
 
+  function sanitizeUpgradeLevels(value) {
+    var result = createUpgradeLevels();
+
+    if (!isObject(value)) {
+      return result;
+    }
+
+    Data.UPGRADES.forEach(function (upgrade) {
+      result[upgrade.id] = clampInt(value[upgrade.id], 0, upgrade.maxLevel, 0);
+    });
+
+    return result;
+  }
+
+  function sanitizeIdList(value, exists, unique) {
+    var result = [];
+
+    if (!Array.isArray(value)) {
+      return result;
+    }
+
+    value.forEach(function (id) {
+      if (typeof id !== "string" || !exists(id)) {
+        return;
+      }
+      if (unique && result.indexOf(id) !== -1) {
+        return;
+      }
+      result.push(id);
+    });
+
+    return result;
+  }
+
+  function upgradeExists(id) {
+    return Data.UPGRADES.some(function (upgrade) {
+      return upgrade.id === id;
+    });
+  }
+
+  function relicExists(id) {
+    return Data.RELICS.some(function (relic) {
+      return relic.id === id;
+    });
+  }
+
+  function sanitizeRunStats(value) {
+    var defaults = {
+      bricksDestroyed: 0,
+      itemsCollected: 0,
+      bossesDefeated: 0,
+      maxActiveBalls: 1,
+      livesLost: 0,
+      upgradesSelected: 0,
+      relicsSelected: 0
+    };
+    var result = clone(defaults);
+
+    if (!isObject(value)) {
+      return result;
+    }
+
+    Object.keys(defaults).forEach(function (key) {
+      result[key] = key === "maxActiveBalls" ? Math.max(1, nonNegativeInt(value[key], defaults[key])) : nonNegativeInt(value[key], defaults[key]);
+    });
+
+    return result;
+  }
+
+  function sanitizeRelicCounters(value) {
+    return {
+      bricksDestroyed: nonNegativeInt(isObject(value) ? value.bricksDestroyed : undefined, 0)
+    };
+  }
+
+  function sanitizeEvolutionMap(value) {
+    var result = {};
+
+    if (!isObject(value)) {
+      return result;
+    }
+
+    (Data.EVOLUTIONS || []).forEach(function (evolution) {
+      if (value[evolution.id]) {
+        result[evolution.id] = true;
+      }
+    });
+
+    return result;
+  }
+
+  function sanitizeEvolutionCounters(value) {
+    return {
+      itemsCollected: nonNegativeInt(isObject(value) ? value.itemsCollected : undefined, 0),
+      chainedExplosionsThisFrame: 0,
+      precisionPrimed: nonNegativeInt(isObject(value) ? value.precisionPrimed : undefined, 0),
+      precisionScore: nonNegativeNumber(isObject(value) ? value.precisionScore : undefined, 1),
+      portalPrimed: nonNegativeInt(isObject(value) ? value.portalPrimed : undefined, 0),
+      portalScore: nonNegativeNumber(isObject(value) ? value.portalScore : undefined, 1),
+      bumperDamageStacks: clampInt(isObject(value) ? value.bumperDamageStacks : undefined, 0, 3, 0),
+      dailyRewardStage5: !!(isObject(value) && value.dailyRewardStage5),
+      dailyRewardClear: !!(isObject(value) && value.dailyRewardClear)
+    };
+  }
+
+  function sanitizeActiveRun(value, save) {
+    if (!isObject(value)) {
+      return null;
+    }
+
+    var phase = typeof value.phase === "string" ? value.phase : "";
+    var validPhases = [Data.MODES.READY, Data.MODES.UPGRADE, Data.MODES.RELIC];
+
+    if (validPhases.indexOf(phase) === -1) {
+      return null;
+    }
+
+    var selectedClassId = typeof value.selectedClassId === "string" && Data.CLASSES[value.selectedClassId] ? value.selectedClassId : null;
+    var gameModeId = typeof value.gameModeId === "string" && Data.GAME_MODES[value.gameModeId] ? value.gameModeId : null;
+
+    if (!selectedClassId || !gameModeId) {
+      return null;
+    }
+
+    var stage = positiveInt(value.stage, 1);
+    var rules = Data.GAME_MODES[gameModeId].rules || {};
+    var finalStage = rules.finalStage || Data.GAME.finalStage;
+
+    if (!rules.endless && stage > finalStage) {
+      return null;
+    }
+
+    var maxLives = positiveInt(value.maxLives, Data.GAME.maxLives);
+    var lives = clampInt(value.lives, 0, maxLives, Data.GAME.startingLives);
+    var score = nonNegativeInt(value.score, 0);
+    var upgradeLevels = sanitizeUpgradeLevels(value.upgradeLevels);
+    var chosenUpgrades = Array.isArray(value.chosenUpgrades) ? value.chosenUpgrades.filter(function (entry) {
+      return typeof entry === "string";
+    }).slice(0, 64) : [];
+    var pendingUpgradeIds = sanitizeIdList(value.pendingUpgradeIds, upgradeExists, true);
+    var selectedRelicIds = sanitizeIdList(value.selectedRelicIds, relicExists, true);
+    var pendingRelicIds = sanitizeIdList(value.pendingRelicIds, relicExists, true);
+    var relicLimit = rules.relicLimit || 1;
+
+    if (selectedRelicIds.length > relicLimit) {
+      return null;
+    }
+
+    if (phase === Data.MODES.UPGRADE && !pendingUpgradeIds.length) {
+      return null;
+    }
+
+    if (phase === Data.MODES.RELIC && !pendingRelicIds.length) {
+      return null;
+    }
+
+    return {
+      checkpointVersion: 1,
+      phase: phase,
+      stage: stage,
+      score: score,
+      lives: lives,
+      maxLives: maxLives,
+      selectedClassId: selectedClassId,
+      gameModeId: gameModeId,
+      upgradeLevels: upgradeLevels,
+      chosenUpgrades: chosenUpgrades,
+      pendingUpgradeIds: pendingUpgradeIds,
+      selectedRelicIds: selectedRelicIds,
+      pendingRelicIds: pendingRelicIds,
+      activeEvolutions: sanitizeEvolutionMap(value.activeEvolutions),
+      evolutionCounters: sanitizeEvolutionCounters(value.evolutionCounters),
+      runModifiers: isObject(value.runModifiers) ? clone(value.runModifiers) : {},
+      rng: isObject(value.rng) ? { seed: nonNegativeInt(value.rng.seed, 0), state: nonNegativeInt(value.rng.state, 0), dailyDate: typeof value.rng.dailyDate === "string" ? value.rng.dailyDate : "" } : null,
+      zoneId: typeof value.zoneId === "string" && Data.ZONES && Data.ZONES[value.zoneId] ? value.zoneId : null,
+      relicCounters: sanitizeRelicCounters(value.relicCounters),
+      runStats: sanitizeRunStats(value.runStats),
+      highestStageReached: Math.max(stage, positiveInt(value.highestStageReached, stage)),
+      bossesDefeated: nonNegativeInt(value.bossesDefeated, 0),
+      runElapsedTime: nonNegativeNumber(value.runElapsedTime, 0)
+    };
+  }
+
   function sanitizeSave(value) {
     var defaults = createDefaultSave();
 
@@ -166,6 +450,19 @@
     };
     var unlockedClasses = sanitizeUnlockedClasses(value.unlockedClasses, defaults);
     var unlockedModes = sanitizeUnlockedModes(value.unlockedModes, defaults, legacy.runClearCount);
+    var unlocks = sanitizeUnlocks(value.unlocks, defaults, unlockedClasses, unlockedModes, legacy.runClearCount);
+
+    Object.keys(unlocks.classes).forEach(function (classId) {
+      if (unlocks.classes[classId]) {
+        unlockedClasses[classId] = true;
+      }
+    });
+    Object.keys(unlocks.modes).forEach(function (modeId) {
+      if (unlocks.modes[modeId]) {
+        unlockedModes[modeId] = true;
+      }
+    });
+
     var selectedClassId = typeof value.selectedClassId === "string" && Data.CLASSES[value.selectedClassId] ? value.selectedClassId : defaults.selectedClassId;
     var selectedGameModeId = typeof value.selectedGameModeId === "string" && Data.GAME_MODES[value.selectedGameModeId] ? value.selectedGameModeId : defaults.selectedGameModeId;
 
@@ -177,7 +474,7 @@
       selectedGameModeId = "standard";
     }
 
-    return {
+    var clean = {
       schemaVersion: Data.SAVE_SCHEMA_VERSION,
       bestScore: legacy.bestScore,
       highestStage: legacy.highestStage,
@@ -189,11 +486,19 @@
       selectedGameModeId: selectedGameModeId,
       unlockedClasses: unlockedClasses,
       unlockedModes: unlockedModes,
+      unlocks: unlocks,
       metaUpgrades: sanitizeMetaUpgrades(value.metaUpgrades, defaults),
       achievements: sanitizeAchievements(value.achievements),
       records: sanitizeRecords(value.records, defaults.records, legacy),
-      settings: sanitizeSettings(value.settings, defaults)
+      settings: sanitizeSettings(value.settings, defaults),
+      tutorial: sanitizeTutorial(value.tutorial, defaults),
+      dailyChallenge: sanitizeDailyChallenge(value.dailyChallenge),
+      uiPreferences: isObject(value.uiPreferences) ? { pictograms: value.uiPreferences.pictograms !== false } : clone(defaults.uiPreferences),
+      activeRun: null
     };
+
+    clean.activeRun = sanitizeActiveRun(value.activeRun, clean);
+    return clean;
   }
 
   function loadSave() {
@@ -205,10 +510,24 @@
     }
 
     try {
-      var raw = storage.getItem(Data.SAVE_KEY) ||
+      var raw = storage.getItem(Data.SAVE_KEY);
+      var fromCurrentKey = !!raw;
+
+      raw = raw ||
+        storage.getItem("abyssBreaker.save.v4") ||
+        storage.getItem("abyssBreaker.save.v3") ||
         storage.getItem("abyssBreaker.save.v2") ||
         storage.getItem("abyssBreaker.save.v1");
-      return raw ? sanitizeSave(JSON.parse(raw)) : defaults;
+
+      if (!raw) {
+        return defaults;
+      }
+
+      var clean = sanitizeSave(JSON.parse(raw));
+      if (!fromCurrentKey) {
+        storage.setItem(Data.SAVE_KEY, JSON.stringify(clean));
+      }
+      return clean;
     } catch (error) {
       return defaults;
     }
@@ -241,10 +560,14 @@
 
   function createPaddle(width, height) {
     var baseWidth = Math.min(Data.PADDLE.width, width * 0.42);
+    var bottomOffset = Math.max(
+      Data.PADDLE.minBottomOffset || Data.PADDLE.yOffset,
+      Math.min(Data.PADDLE.maxBottomOffset || Data.PADDLE.yOffset, height * (Data.PADDLE.bottomOffsetRatio || 0))
+    );
 
     return {
       x: (width - baseWidth) / 2,
-      y: height - Data.PADDLE.yOffset,
+      y: height - bottomOffset,
       width: baseWidth,
       baseWidth: baseWidth,
       baseWidthBeforeUpgrades: baseWidth,
@@ -315,6 +638,29 @@
       selectedRelicId: null,
       selectedRelicIds: [],
       relicChoices: [],
+      zoneId: null,
+      gimmicks: [],
+      gimmickEffects: [],
+      gimmickTimers: {},
+      activeEvolutions: {},
+      evolutionCounters: {
+        itemsCollected: 0,
+        chainedExplosionsThisFrame: 0,
+        precisionPrimed: 0,
+        precisionScore: 1,
+        portalPrimed: 0,
+        portalScore: 1,
+        bumperDamageStacks: 0,
+        dailyRewardStage5: false,
+        dailyRewardClear: false
+      },
+      evolutionStageFlags: {},
+      runModifiers: {},
+      rng: null,
+      tutorial: {
+        active: false,
+        step: 0
+      },
       relicCounters: {
         bricksDestroyed: 0
       },
@@ -343,7 +689,12 @@
       floatingTexts: [],
       timers: {},
       activeEffects: {
-        slowBallTimeRemaining: 0
+        slowBallTimeRemaining: 0,
+        magneticPaddleTimeRemaining: 0,
+        laserPaddleTimeRemaining: 0,
+        laserCooldown: 0,
+        bottomBarrierTimeRemaining: 0,
+        bottomBarrierDurability: 0
       },
       upgrades: {
         levels: createUpgradeLevels(),
@@ -438,6 +789,59 @@
     return state.persistent;
   }
 
+  function saveActiveRun(runState, phase) {
+    var state = runState || getRunState();
+    var save = state.persistent || loadSave();
+    var selectedRelicIds = Array.isArray(state.selectedRelicIds) ? state.selectedRelicIds.slice() : [];
+    var pendingUpgradeIds = state.upgrades && Array.isArray(state.upgrades.pending) ? state.upgrades.pending.map(function (upgrade) {
+      return upgrade.id;
+    }) : [];
+    var pendingRelicIds = Array.isArray(state.relicChoices) ? state.relicChoices.map(function (relic) {
+      return relic.id;
+    }) : [];
+
+    save.activeRun = {
+      checkpointVersion: 1,
+      phase: phase || state.mode,
+      stage: state.stage,
+      score: state.score,
+      lives: state.lives,
+      maxLives: state.maxLives,
+      selectedClassId: state.selectedClassId,
+      gameModeId: state.gameModeId,
+      upgradeLevels: clone(state.upgrades && state.upgrades.levels ? state.upgrades.levels : {}),
+      chosenUpgrades: clone(state.upgrades && state.upgrades.chosen ? state.upgrades.chosen : []),
+      pendingUpgradeIds: pendingUpgradeIds,
+      selectedRelicIds: selectedRelicIds,
+      pendingRelicIds: pendingRelicIds,
+      activeEvolutions: clone(state.activeEvolutions || {}),
+      evolutionCounters: clone(state.evolutionCounters || {}),
+      runModifiers: clone(state.runModifiers || {}),
+      rng: state.rng ? clone(state.rng) : null,
+      zoneId: state.zoneId || null,
+      relicCounters: clone(state.relicCounters || {}),
+      runStats: clone(state.runStats || {}),
+      highestStageReached: state.highestStageReached,
+      bossesDefeated: state.bossesDefeated,
+      runElapsedTime: state.runElapsedTime
+    };
+
+    state.persistent = savePersistent(save);
+    return state.persistent.activeRun;
+  }
+
+  function clearActiveRun() {
+    var state = getRunState();
+
+    if (!state.persistent || !state.persistent.activeRun) {
+      return false;
+    }
+
+    state.persistent.activeRun = null;
+    state.persistent = savePersistent(state.persistent);
+    return true;
+  }
+
   function updateBestScore(score) {
     var state = getRunState();
     var nextBest = nonNegativeInt(score, state.persistent.bestScore);
@@ -512,6 +916,16 @@
 
     state.persistent.abyssStones -= classData.unlockCost;
     state.persistent.unlockedClasses[classId] = true;
+    state.persistent.unlocks = state.persistent.unlocks || createUnlockDefaults(Data.STORAGE_DEFAULTS);
+    state.persistent.unlocks.classes[classId] = true;
+    if (classId === "alchemist") {
+      state.persistent.unlocks.relics.alchemist_star = true;
+      state.persistent.unlocks.evolutions.alchemy_bloom = true;
+    } else if (classId === "tuner") {
+      state.persistent.unlocks.relics.mirror_shard = true;
+      state.persistent.unlocks.relics.precision_tuner = true;
+      state.persistent.unlocks.evolutions.perfect_tuning = true;
+    }
     state.persistent.selectedClassId = classId;
     replacePersistent(state.persistent);
     return true;
@@ -548,9 +962,19 @@
     Data.GAME_MODE_ORDER.forEach(function (modeId) {
       if (!state.persistent.unlockedModes[modeId]) {
         state.persistent.unlockedModes[modeId] = true;
+        state.persistent.unlocks = state.persistent.unlocks || createUnlockDefaults(Data.STORAGE_DEFAULTS);
+        state.persistent.unlocks.modes[modeId] = true;
         changed = true;
       }
     });
+
+    if (changed) {
+      state.persistent.unlocks = state.persistent.unlocks || createUnlockDefaults(Data.STORAGE_DEFAULTS);
+      state.persistent.unlocks.relics.portal_resonator = true;
+      state.persistent.unlocks.relics.bumper_core = true;
+      state.persistent.unlocks.relics.giant_grip = true;
+      state.persistent.unlocks.evolutions.dimensional_refraction = true;
+    }
 
     if (changed) {
       replacePersistent(state.persistent);
@@ -599,6 +1023,7 @@
     }
 
     var clean = sanitizeSave(parsed);
+    clean.activeRun = null;
     var state = createRunState(savePersistent(clean));
     state.mode = Data.MODES.LOBBY;
     setCurrentState(state);
@@ -637,12 +1062,26 @@
     return state.persistent.settings;
   }
 
+  function completeTutorial(skipped) {
+    var state = getRunState();
+    state.persistent.tutorial = state.persistent.tutorial || { completed: false, skipped: false };
+    state.persistent.tutorial.completed = !skipped;
+    state.persistent.tutorial.skipped = !!skipped;
+    if (state.tutorial) {
+      state.tutorial.active = false;
+    }
+    replacePersistent(state.persistent);
+    return state.persistent.tutorial;
+  }
+
   var State = {
     current: null,
     createDefaultSave: createDefaultSave,
     sanitizeSave: sanitizeSave,
     loadSave: loadSave,
     savePersistent: savePersistent,
+    saveActiveRun: saveActiveRun,
+    clearActiveRun: clearActiveRun,
     createRunState: createRunState,
     createPaddle: createPaddle,
     createBall: createBall,
@@ -663,7 +1102,8 @@
     applyImportedSave: applyImportedSave,
     exportSaveText: exportSaveText,
     resetAllProgress: resetAllProgress,
-    updateSettings: updateSettings
+    updateSettings: updateSettings,
+    completeTutorial: completeTutorial
   };
 
   AbyssBreaker.State = State;
