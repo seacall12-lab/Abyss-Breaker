@@ -140,6 +140,16 @@
     }
   }
 
+  function registerServiceWorker() {
+    if (!global.navigator || !global.navigator.serviceWorker || !global.isSecureContext) {
+      return;
+    }
+
+    global.navigator.serviceWorker.register("./service-worker.js").catch(function () {
+      return null;
+    });
+  }
+
   function init() {
     if (initialized) {
       return State.getRunState();
@@ -157,6 +167,7 @@
     global.addEventListener("resize", handleResize);
     global.addEventListener("orientationchange", handleResize);
     global.document.addEventListener("visibilitychange", handleVisibilityChange);
+    registerServiceWorker();
 
     startLoop();
     initialized = true;
