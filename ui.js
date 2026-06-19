@@ -20,6 +20,10 @@
   var modeSignature = "";
   var achievementSignature = "";
   var recordsSignature = "";
+  var hudSignature = "";
+  var bossSignature = "";
+  var guideSignature = "";
+  var buttonSignature = "";
   var resetArmed = false;
   var audioContext = null;
 
@@ -40,7 +44,8 @@
       "control-guide", "launch-button", "pause-button", "restart-button", "start-overlay",
       "start-button", "mode-button", "class-button", "meta-button", "achievement-button",
       "records-button", "settings-button", "lobby-stones", "lobby-class", "lobby-mode",
-      "lobby-best", "lobby-stage", "lobby-meta-summary", "pause-overlay", "pause-run-info",
+      "lobby-best", "lobby-stage", "lobby-meta-summary", "lobby-continue-info",
+      "new-run-button", "pause-overlay", "pause-run-info",
       "resume-button", "pause-settings-button", "pause-quit-button", "pause-restart-button",
       "life-lost-overlay", "continue-button", "stage-clear-overlay", "stage-clear-score",
       "next-stage-button", "stage-restart-button", "upgrade-overlay", "upgrade-title",
@@ -70,11 +75,17 @@
   }
 
   function setHidden(element, hidden) {
-    element.classList.toggle("is-hidden", !!hidden);
+    var shouldHide = !!hidden;
+    if (element.classList.contains("is-hidden") !== shouldHide) {
+      element.classList.toggle("is-hidden", shouldHide);
+    }
   }
 
   function setText(element, value) {
-    element.textContent = String(value);
+    var text = String(value);
+    if (element.textContent !== text) {
+      element.textContent = text;
+    }
   }
 
   function formatInteger(value) {
@@ -109,8 +120,28 @@
     return Data.GAME_MODES[state.gameModeId || (state.persistent && state.persistent.selectedGameModeId) || "standard"] || Data.GAME_MODES.standard;
   }
 
+  function getClassName(classId) {
+    return (Data.CLASSES[classId] || Data.CLASSES.balanced).name;
+  }
+
+  function getModeName(modeId) {
+    return (Data.GAME_MODES[modeId] || Data.GAME_MODES.standard).name;
+  }
+
   function getClassData(state) {
     return Data.CLASSES[state.persistent.selectedClassId] || Data.CLASSES.balanced;
+  }
+
+  function getActiveRunText(activeRun) {
+    if (!activeRun) {
+      return "";
+    }
+
+    return "이어하기 - 스테이지 " + formatInteger(activeRun.stage) +
+      " / " + getModeName(activeRun.gameModeId) +
+      " / " + getClassName(activeRun.selectedClassId) +
+      " / 점수 " + formatInteger(activeRun.score) +
+      " / 생명 " + formatInteger(activeRun.lives) + "/" + formatInteger(activeRun.maxLives);
   }
 
   function getRelicName(id) {
@@ -201,11 +232,19 @@
   function updateHud(state) {
     var mode = getRunModeData(state);
     var stageLabel = state.gameModeRules && state.gameModeRules.endless ? formatInteger(state.stage) : formatInteger(state.stage) + "/" + (state.gameModeRules && state.gameModeRules.finalStage || Data.GAME.finalStage);
+    var zone = Data.ZONES && state.zoneId && Data.ZONES[state.zoneId] ? Data.ZONES[state.zoneId] : null;
+    var evolutionCount = state.activeEvolutions ? Object.keys(state.activeEvolutions).length : 0;
+    var signature = state.lives + ":" + state.maxLives + ":" + state.score + ":" + stageLabel + ":" + mode.id + ":" + (zone ? zone.id : "") + ":" + evolutionCount;
+
+    if (signature === hudSignature && !state.flags.needsHudUpdate) {
+      return;
+    }
 
     setText(dom.livesValue, formatInteger(state.lives) + "/" + formatInteger(state.maxLives));
     setText(dom.scoreValue, formatInteger(state.score));
     setText(dom.stageValue, stageLabel);
-    setText(dom.modeValue, mode.name.replace(" 모드", ""));
+    setText(dom.modeValue, (zone ? zone.name + " " : "") + mode.name.replace(" 모드", ""));
+    hudSignature = signature;
     state.flags.needsHudUpdate = false;
   }
 
@@ -213,16 +252,26 @@
     var boss = state.boss;
 
     if (!boss || !boss.alive) {
+      if (bossSignature === "hidden") {
+        return;
+      }
+      bossSignature = "hidden";
       setHidden(dom.bossHud, true);
       return;
     }
 
     var hpRatio = Math.max(0, Math.min(1, boss.hp / Math.max(1, boss.maxHp)));
+    var signature = boss.id + ":" + boss.hp + ":" + boss.maxHp + ":" + !!boss.shieldActive + ":" + hpRatio.toFixed(4);
+
+    if (signature === bossSignature) {
+      return;
+    }
 
     setHidden(dom.bossHud, false);
     setText(dom.bossName, boss.name + (boss.shieldActive ? " 방어" : ""));
     setText(dom.bossHpValue, formatInteger(boss.hp) + "/" + formatInteger(boss.maxHp));
     dom.bossHpFill.style.transform = "scaleX(" + hpRatio + ")";
+    bossSignature = signature;
   }
 
   function updateGuide(state) {
@@ -246,6 +295,11 @@
       text = "정산이 완료되었습니다. 기록과 성장을 확인하세요.";
     }
 
+    if (text === guideSignature) {
+      return;
+    }
+
+    guideSignature = text;
     setText(dom.controlGuide, text);
   }
 
@@ -260,21 +314,41 @@
     });
   }
 
-  function createInfoButton(className, title, description, metaText, actionText, disabled, onClick) {
+  function createInfoButton(className, title, description, metaText, actionText, disabled, onClick, iconId) {
     var button = global.document.createElement("button");
     var header = global.document.createElement("span");
     var name = global.document.createElement("strong");
     var meta = global.document.createElement("span");
     var copy = global.document.createElement("span");
     var action = global.document.createElement("span");
+    var icon = global.document.createElement("span");
 
     button.type = "button";
     button.className = className || "upgrade-card";
     button.disabled = !!disabled;
+    if (!iconId && button.className.indexOf("relic-card") !== -1) {
+      iconId = "relic";
+    } else if (!iconId && button.className.indexOf("mode-card") !== -1) {
+      iconId = title === "Daily Seed" ? "daily" : "mode";
+    } else if (!iconId && button.className.indexOf("class-card") !== -1) {
+      iconId = disabled && actionText && String(actionText).indexOf("0") === -1 ? "locked" : "class";
+    } else if (!iconId && button.className.indexOf("achievement-card") !== -1) {
+      iconId = "achievement";
+    } else if (!iconId && button.className.indexOf("meta-card") !== -1) {
+      iconId = "upgrade";
+    } else if (!iconId) {
+      iconId = "upgrade";
+    }
+    icon.className = "card-icon";
     header.className = "upgrade-card-name";
     meta.className = "upgrade-card-category";
     copy.className = "upgrade-card-description";
     action.className = "upgrade-card-level";
+
+    if (AbyssBreaker.Icons && iconId) {
+      icon.innerHTML = AbyssBreaker.Icons.svg(iconId);
+      button.appendChild(icon);
+    }
 
     setText(name, title);
     setText(meta, metaText || "");
@@ -538,6 +612,7 @@
     var save = state.persistent;
     var classData = getClassData(state);
     var modeData = getModeData(save);
+    var activeRun = save.activeRun || null;
 
     setText(dom.lobbyStones, formatInteger(save.abyssStones));
     setText(dom.lobbyClass, classData.name);
@@ -545,6 +620,10 @@
     setText(dom.lobbyBest, formatInteger(save.bestScore));
     setText(dom.lobbyStage, formatInteger(save.highestStage));
     setText(dom.lobbyMetaSummary, getMetaSummary(save));
+    setText(dom.startButton, activeRun ? "이어하기" : "새 시작");
+    setText(dom.lobbyContinueInfo, getActiveRunText(activeRun));
+    setHidden(dom.lobbyContinueInfo, !activeRun);
+    setHidden(dom.newRunButton, !activeRun);
   }
 
   function getNewAchievementText(state) {
@@ -676,10 +755,17 @@
   }
 
   function syncButtons(state) {
+    var signature = state.mode + ":" + !!(state.persistent && state.persistent.activeRun);
+
+    if (signature === buttonSignature) {
+      return;
+    }
+
     dom.launchButton.disabled = state.mode !== Data.MODES.READY;
     dom.pauseButton.disabled = state.mode !== Data.MODES.READY && state.mode !== Data.MODES.PLAYING;
     dom.restartButton.disabled = false;
     dom.resumeButton.disabled = state.mode !== Data.MODES.PAUSED;
+    buttonSignature = signature;
   }
 
   function sync(state) {
@@ -695,6 +781,40 @@
   }
 
   function startGame() {
+    activePointerId = null;
+
+    if (State.getRunState().persistent.activeRun) {
+      if (!Game.restoreActiveRun()) {
+        State.clearActiveRun();
+        sync(State.getRunState());
+        return;
+      }
+      if (AbyssBreaker.Main && typeof AbyssBreaker.Main.resizeCanvas === "function") {
+        AbyssBreaker.Main.resizeCanvas();
+      }
+      if (AbyssBreaker.Main && typeof AbyssBreaker.Main.renderFrame === "function") {
+        AbyssBreaker.Main.renderFrame();
+      }
+      if (AbyssBreaker.Main && typeof AbyssBreaker.Main.resetFrameClock === "function") {
+        AbyssBreaker.Main.resetFrameClock();
+      }
+    } else if (AbyssBreaker.Main && typeof AbyssBreaker.Main.restartGame === "function") {
+      AbyssBreaker.Main.restartGame();
+    } else {
+      Game.startRun(State.restartRun());
+    }
+
+    playSound("confirm");
+    hideAllOverlays();
+    sync(State.getRunState());
+  }
+
+  function startNewRun() {
+    if (State.getRunState().persistent.activeRun && global.confirm && !global.confirm("기존 이어하기 기록을 삭제하고 새로 시작할까요?")) {
+      return;
+    }
+
+    State.clearActiveRun();
     activePointerId = null;
 
     if (AbyssBreaker.Main && typeof AbyssBreaker.Main.restartGame === "function") {
@@ -960,6 +1080,7 @@
 
   function bindEvents() {
     dom.startButton.addEventListener("click", startGame);
+    dom.newRunButton.addEventListener("click", startNewRun);
     dom.modeButton.addEventListener("click", function () { openMenu(Data.MODES.GAME_MODE); });
     dom.classButton.addEventListener("click", function () { openMenu(Data.MODES.CLASS_SELECT); });
     dom.metaButton.addEventListener("click", function () { openMenu(Data.MODES.META); });
