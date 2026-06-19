@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#071016">
   <title>Abyss Breaker</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -39,7 +41,7 @@
 
       <section id="start-overlay" class="overlay" aria-label="로비">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Abyss Breaker v1.0.0</p>
+          <p class="overlay-kicker">Abyss Breaker v2.0.0</p>
           <h1>Abyss Breaker</h1>
           <dl class="result-list result-list-three">
             <div><dt>심연석</dt><dd id="lobby-stones">0</dd></div>
@@ -49,6 +51,8 @@
             <div><dt>최고 스테이지</dt><dd id="lobby-stage">1</dd></div>
             <div><dt>영구 성장</dt><dd id="lobby-meta-summary">0</dd></div>
           </dl>
+          <p id="lobby-continue-info" class="overlay-copy is-hidden"></p>
+          <button id="new-run-button" type="button" class="button-secondary is-hidden">새로 시작</button>
           <div class="overlay-actions lobby-actions">
             <button id="start-button" type="button">런 시작</button>
             <button id="mode-button" type="button" class="button-secondary">게임 모드</button>
@@ -234,6 +238,7 @@
   <script src="state.js"></script>
   <script src="game.js"></script>
   <script src="render.js"></script>
+  <script src="icons.js"></script>
   <script src="ui.js"></script>
   <script src="main.js"></script>
 </body>
