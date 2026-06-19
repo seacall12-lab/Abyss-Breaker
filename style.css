@@ -386,7 +386,8 @@ button:focus-visible {
 
 .upgrade-card {
   display: grid;
-  gap: 5px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 5px 8px;
   width: 100%;
   min-height: 82px;
   padding: 11px;
@@ -395,6 +396,28 @@ button:focus-visible {
     linear-gradient(180deg, rgba(101, 200, 255, 0.12), rgba(22, 39, 49, 0.94)),
     var(--button);
   text-align: left;
+}
+
+.card-icon {
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(242, 201, 76, 0.32);
+  border-radius: 7px;
+  background: rgba(242, 201, 76, 0.08);
+}
+
+.pictogram {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--yellow);
 }
 
 .upgrade-card:disabled {
@@ -409,6 +432,12 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.upgrade-card > .upgrade-card-name,
+.upgrade-card > .upgrade-card-description,
+.upgrade-card > .upgrade-card-level {
+  grid-column: 2;
 }
 
 .upgrade-card-name strong {
