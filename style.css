@@ -39,6 +39,10 @@ body {
 }
 
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   min-width: 44px;
   min-height: 44px;
   border: 1px solid rgba(160, 215, 224, 0.27);
@@ -51,6 +55,25 @@ button {
   letter-spacing: 0;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.button-icon,
+.label-icon,
+.record-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.button-icon .pictogram {
+  width: 16px;
+  height: 16px;
+}
+
+.label-icon .pictogram,
+.record-icon .pictogram {
+  width: 14px;
+  height: 14px;
 }
 
 button:active {
@@ -110,6 +133,9 @@ button:focus-visible {
 }
 
 .hud-stat span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   overflow: hidden;
   color: var(--muted);
   font-size: 10px;
@@ -377,6 +403,38 @@ button:focus-visible {
   min-height: 44px;
 }
 
+.tab-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tab-row button {
+  min-height: 38px;
+  padding: 7px 6px;
+  font-size: 11px;
+}
+
+.tab-row button.is-selected {
+  border-color: rgba(242, 201, 76, 0.62);
+  background:
+    linear-gradient(180deg, rgba(242, 201, 76, 0.18), rgba(22, 39, 49, 0.94)),
+    var(--button);
+}
+
+.class-unlock-message {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(242, 201, 76, 0.28);
+  border-radius: 6px;
+  background: rgba(242, 201, 76, 0.08);
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.3;
+  text-align: center;
+}
+
 .scroll-panel {
   max-height: min(58dvh, 470px);
   overflow: auto;
@@ -473,6 +531,7 @@ button:focus-visible {
 
 .class-card.is-selected,
 .mode-card.is-selected,
+.cosmetic-card.is-selected,
 .achievement-card.is-selected,
 .meta-card:focus-visible,
 .relic-card:focus-visible {
@@ -481,6 +540,7 @@ button:focus-visible {
 
 .class-card.is-selected,
 .mode-card.is-selected,
+.cosmetic-card.is-selected,
 .achievement-card.is-selected {
   background:
     linear-gradient(180deg, rgba(242, 201, 76, 0.16), rgba(22, 39, 49, 0.94)),
@@ -490,6 +550,7 @@ button:focus-visible {
 .meta-card .upgrade-card-category,
 .class-card .upgrade-card-category,
 .mode-card .upgrade-card-category,
+.cosmetic-card .upgrade-card-category,
 .achievement-card .upgrade-card-category,
 .relic-card .upgrade-card-category {
   white-space: nowrap;
@@ -503,13 +564,17 @@ button:focus-visible {
 
 .record-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 8px 9px;
   border: 1px solid rgba(190, 220, 224, 0.14);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.record-icon {
+  color: var(--yellow);
 }
 
 .record-line dt {
@@ -544,6 +609,13 @@ button:focus-visible {
   color: var(--text);
   font-size: 13px;
   font-weight: 900;
+}
+
+.setting-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .setting-row input {
@@ -610,6 +682,7 @@ button:focus-visible {
 
   .result-list-three,
   .overlay-actions,
+  .tab-row,
   .lobby-actions {
     grid-template-columns: 1fr;
   }
