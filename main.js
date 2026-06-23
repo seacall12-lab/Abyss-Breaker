@@ -17,6 +17,7 @@
   var rafId = 0;
   var lastTimestamp = 0;
   var canvas = null;
+  var audioContext = null;
 
   function now() {
     return global.performance && typeof global.performance.now === "function" ? global.performance.now() : Date.now();
@@ -150,6 +151,76 @@
     });
   }
 
+  function getSettings() {
+    var state = State.getRunState();
+    return state && state.persistent && state.persistent.settings ? state.persistent.settings : {};
+  }
+
+  function ensureAudio() {
+    var AudioCtor = global.AudioContext || global.webkitAudioContext;
+
+    if (!AudioCtor) {
+      return null;
+    }
+    if (!audioContext) {
+      audioContext = new AudioCtor();
+    }
+    if (audioContext.state === "suspended" && typeof audioContext.resume === "function") {
+      audioContext.resume().catch(function () {});
+    }
+    return audioContext;
+  }
+
+  function playSound(kind) {
+    var settings = getSettings();
+
+    if (settings.sound === false || settings.soundEnabled === false) {
+      return;
+    }
+
+    var context = ensureAudio();
+    var map = {
+      tap: [220, 0.045],
+      confirm: [440, 0.08],
+      error: [120, 0.12],
+      item: [660, 0.06],
+      mission: [520, 0.09],
+      evolution: [330, 0.14]
+    };
+    var entry = map[kind] || map.tap;
+
+    if (!context) {
+      return;
+    }
+
+    try {
+      var osc = context.createOscillator();
+      var gain = context.createGain();
+      var nowTime = context.currentTime;
+      osc.type = kind === "error" ? "sawtooth" : "sine";
+      osc.frequency.setValueAtTime(entry[0], nowTime);
+      gain.gain.setValueAtTime(0.0001, nowTime);
+      gain.gain.exponentialRampToValueAtTime(0.055, nowTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, nowTime + entry[1]);
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.start(nowTime);
+      osc.stop(nowTime + entry[1] + 0.02);
+    } catch (error) {}
+  }
+
+  function vibrate(pattern) {
+    var settings = getSettings();
+
+    if (settings.vibration === false || settings.vibrationEnabled === false || !global.navigator || typeof global.navigator.vibrate !== "function") {
+      return;
+    }
+
+    try {
+      global.navigator.vibrate(pattern || 12);
+    } catch (error) {}
+  }
+
   function init() {
     if (initialized) {
       return State.getRunState();
@@ -187,6 +258,11 @@
     isLoopRunning: function () {
       return loopRunning;
     }
+  };
+
+  AbyssBreaker.Feedback = {
+    playSound: playSound,
+    vibrate: vibrate
   };
 
   if (global.document.readyState === "loading") {
