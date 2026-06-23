@@ -20,10 +20,15 @@
   var modeSignature = "";
   var achievementSignature = "";
   var recordsSignature = "";
+  var compendiumSignature = "";
+  var cosmeticsSignature = "";
+  var compendiumTab = "upgrades";
+  var cosmeticsTab = "ball";
   var hudSignature = "";
   var bossSignature = "";
   var guideSignature = "";
   var buttonSignature = "";
+  var classUnlockMessage = "";
   var resetArmed = false;
   var audioContext = null;
 
@@ -43,28 +48,30 @@
       "canvas-wrap", "game-canvas", "boss-hud", "boss-name", "boss-hp-fill", "boss-hp-value",
       "control-guide", "launch-button", "pause-button", "restart-button", "start-overlay",
       "start-button", "mode-button", "class-button", "meta-button", "achievement-button",
-      "records-button", "settings-button", "lobby-stones", "lobby-class", "lobby-mode",
+      "records-button", "compendium-button", "cosmetics-button", "settings-button", "lobby-stones", "lobby-class", "lobby-mode",
       "lobby-best", "lobby-stage", "lobby-meta-summary", "lobby-continue-info",
       "new-run-button", "pause-overlay", "pause-run-info",
       "resume-button", "pause-settings-button", "pause-quit-button", "pause-restart-button",
-      "life-lost-overlay", "continue-button", "stage-clear-overlay", "stage-clear-score",
+      "life-lost-overlay", "continue-button", "stage-clear-overlay", "stage-clear-score", "stage-mission-result",
       "next-stage-button", "stage-restart-button", "upgrade-overlay", "upgrade-title",
       "upgrade-subtitle", "upgrade-options", "relic-overlay", "relic-title", "relic-subtitle",
       "relic-options", "mode-overlay", "mode-options", "mode-close-button", "class-overlay",
       "class-options", "class-close-button", "meta-overlay", "meta-stones-value",
       "meta-upgrade-options", "meta-close-button", "achievement-overlay",
       "achievement-summary", "achievement-list", "achievement-close-button", "records-overlay",
-      "records-content", "records-close-button", "settings-overlay", "sound-toggle",
+      "records-content", "records-close-button", "compendium-overlay", "compendium-tabs",
+      "compendium-content", "compendium-close-button", "cosmetics-overlay", "cosmetics-tabs",
+      "cosmetics-content", "cosmetics-close-button", "settings-overlay", "sound-toggle",
       "vibration-toggle", "reduced-effects-toggle", "save-data-input", "settings-message",
       "save-export-button", "save-import-button", "save-reset-button", "settings-close-button",
       "gameover-overlay", "gameover-mode", "gameover-score", "gameover-stage", "gameover-time",
-      "gameover-bricks", "gameover-items", "gameover-bosses", "gameover-stones",
-      "gameover-owned-stones", "gameover-build", "gameover-achievements",
+      "gameover-bricks", "gameover-items", "gameover-bosses", "gameover-missions", "gameover-stones",
+      "gameover-owned-stones", "gameover-summary", "gameover-build", "gameover-achievements",
       "gameover-restart-button", "gameover-lobby-button", "gameover-meta-button",
       "gameover-records-button", "run-clear-overlay", "run-clear-mode", "run-clear-score",
       "run-clear-stage", "run-clear-time", "run-clear-bricks", "run-clear-bosses",
-      "run-clear-stones", "run-clear-owned-stones", "run-clear-count", "run-clear-build",
-      "run-clear-achievements", "run-clear-upgrades", "run-clear-restart-button",
+      "run-clear-missions", "run-clear-stones", "run-clear-owned-stones", "run-clear-count",
+      "run-clear-summary", "run-clear-build", "run-clear-achievements", "run-clear-upgrades", "run-clear-restart-button",
       "run-clear-lobby-button", "run-clear-meta-button", "run-clear-records-button"
     ].forEach(function (id) {
       var key = id.replace(/-([a-z])/g, function (_, letter) {
@@ -104,10 +111,61 @@
     return minutes + "분 " + remain + "초";
   }
 
+  function getMissionText(state) {
+    var progress = state.currentStageMission;
+    var mission = progress && Data.STAGE_MISSIONS ? Data.STAGE_MISSIONS[progress.id] : null;
+
+    if (!progress || !mission) {
+      return "";
+    }
+    if (progress.failed) {
+      return "미션: " + mission.name + " 실패";
+    }
+    if (progress.completed) {
+      return "미션: " + mission.name + " 완료";
+    }
+    if (mission.type === "time_limit") {
+      var left = Math.max(0, Math.ceil((mission.target || 90) - ((state.time.elapsed || 0) - (progress.startedAt || 0))));
+      return "미션: " + mission.name + " " + left + "초";
+    }
+    if (mission.type === "fail_on_life_lost") {
+      return "미션: " + mission.name;
+    }
+    return "미션: " + mission.name + " " + formatInteger(progress.progress || 0) + "/" + formatInteger(progress.target || 1);
+  }
+
   function clearChildren(element) {
     while (element.firstChild) {
       element.removeChild(element.firstChild);
     }
+  }
+
+  function getIconMarkup(iconId) {
+    return AbyssBreaker.Icons && iconId ? AbyssBreaker.Icons.svg(iconId) : "";
+  }
+
+  function addButtonIcon(button, iconId) {
+    if (!button || !iconId || button.querySelector(".button-icon")) {
+      return;
+    }
+
+    var icon = global.document.createElement("span");
+    icon.className = "button-icon";
+    icon.innerHTML = getIconMarkup(iconId);
+    button.insertBefore(icon, button.firstChild);
+  }
+
+  function getClassIconId(classId) {
+    return "class_" + classId;
+  }
+
+  function getModeIconId(modeId) {
+    var mode = Data.GAME_MODES[modeId];
+    return mode && mode.iconId ? mode.iconId : "mode_" + modeId;
+  }
+
+  function getItemIconId(itemId) {
+    return "item_" + itemId;
   }
 
   function getModeData(stateOrSave) {
@@ -194,7 +252,7 @@
   function playSound(kind) {
     var settings = getSettings();
 
-    if (!settings.sound || !global.AudioContext && !global.webkitAudioContext) {
+    if (!(settings.soundEnabled !== undefined ? settings.soundEnabled : settings.sound) || !global.AudioContext && !global.webkitAudioContext) {
       return;
     }
 
@@ -224,7 +282,7 @@
   function vibrate(pattern) {
     var settings = getSettings();
 
-    if (settings.vibration && global.navigator && typeof global.navigator.vibrate === "function") {
+    if ((settings.vibrationEnabled !== undefined ? settings.vibrationEnabled : settings.vibration) && global.navigator && typeof global.navigator.vibrate === "function") {
       global.navigator.vibrate(pattern || 18);
     }
   }
@@ -234,7 +292,8 @@
     var stageLabel = state.gameModeRules && state.gameModeRules.endless ? formatInteger(state.stage) : formatInteger(state.stage) + "/" + (state.gameModeRules && state.gameModeRules.finalStage || Data.GAME.finalStage);
     var zone = Data.ZONES && state.zoneId && Data.ZONES[state.zoneId] ? Data.ZONES[state.zoneId] : null;
     var evolutionCount = state.activeEvolutions ? Object.keys(state.activeEvolutions).length : 0;
-    var signature = state.lives + ":" + state.maxLives + ":" + state.score + ":" + stageLabel + ":" + mode.id + ":" + (zone ? zone.id : "") + ":" + evolutionCount;
+    var missionText = getMissionText(state);
+    var signature = state.lives + ":" + state.maxLives + ":" + state.score + ":" + stageLabel + ":" + mode.id + ":" + (zone ? zone.id : "") + ":" + evolutionCount + ":" + missionText;
 
     if (signature === hudSignature && !state.flags.needsHudUpdate) {
       return;
@@ -244,6 +303,10 @@
     setText(dom.scoreValue, formatInteger(state.score));
     setText(dom.stageValue, stageLabel);
     setText(dom.modeValue, (zone ? zone.name + " " : "") + mode.name.replace(" 모드", ""));
+    if (missionText && (state.mode === Data.MODES.READY || state.mode === Data.MODES.PLAYING)) {
+      setText(dom.controlGuide, missionText);
+      guideSignature = missionText;
+    }
     hudSignature = signature;
     state.flags.needsHudUpdate = false;
   }
@@ -268,7 +331,8 @@
     }
 
     setHidden(dom.bossHud, false);
-    setText(dom.bossName, boss.name + (boss.shieldActive ? " 방어" : ""));
+    var weak = (boss.weakTimer || boss.forcedWeakTimer) > 0 ? " 약점 개방" : (boss.weakPointSide === "right" ? " 우측 약점" : " 좌측 약점");
+    setText(dom.bossName, boss.name + (boss.shieldActive ? " 방어" : "") + weak);
     setText(dom.bossHpValue, formatInteger(boss.hp) + "/" + formatInteger(boss.maxHp));
     dom.bossHpFill.style.transform = "scaleX(" + hpRatio + ")";
     bossSignature = signature;
@@ -308,7 +372,7 @@
       dom.startOverlay, dom.pauseOverlay, dom.lifeLostOverlay, dom.stageClearOverlay,
       dom.upgradeOverlay, dom.relicOverlay, dom.modeOverlay, dom.classOverlay, dom.metaOverlay,
       dom.achievementOverlay, dom.recordsOverlay, dom.settingsOverlay, dom.gameoverOverlay,
-      dom.runClearOverlay
+      dom.compendiumOverlay, dom.cosmeticsOverlay, dom.runClearOverlay
     ].forEach(function (overlay) {
       setHidden(overlay, true);
     });
@@ -329,7 +393,7 @@
     if (!iconId && button.className.indexOf("relic-card") !== -1) {
       iconId = "relic";
     } else if (!iconId && button.className.indexOf("mode-card") !== -1) {
-      iconId = title === "Daily Seed" ? "daily" : "mode";
+      iconId = "mode";
     } else if (!iconId && button.className.indexOf("class-card") !== -1) {
       iconId = disabled && actionText && String(actionText).indexOf("0") === -1 ? "locked" : "class";
     } else if (!iconId && button.className.indexOf("achievement-card") !== -1) {
@@ -370,12 +434,18 @@
     return button;
   }
 
-  function createRecordLine(label, value) {
+  function createRecordLine(label, value, iconId) {
     var row = global.document.createElement("div");
     var dt = global.document.createElement("dt");
     var dd = global.document.createElement("dd");
 
     row.className = "record-line";
+    if (iconId && AbyssBreaker.Icons) {
+      var icon = global.document.createElement("span");
+      icon.className = "record-icon";
+      icon.innerHTML = getIconMarkup(iconId);
+      row.appendChild(icon);
+    }
     setText(dt, label);
     setText(dd, value);
     row.appendChild(dt);
@@ -390,7 +460,7 @@
       upgrade.name,
       upgrade.description,
       upgrade.category,
-      "Lv." + upgrade.level + " → " + upgrade.nextLevel + " / " + (upgrade.maxLevel >= 90 ? "반복" : upgrade.maxLevel),
+      "레벨 " + upgrade.level + " → " + upgrade.nextLevel + " / " + (upgrade.maxLevel >= 90 ? "반복" : upgrade.maxLevel),
       false,
       function () {
         var state = State.getRunState();
@@ -408,7 +478,8 @@
           hideAllOverlays();
           sync(State.getRunState());
         }
-      }
+      },
+      upgrade.iconId || "upgrade"
     );
   }
 
@@ -448,7 +519,7 @@
           hideAllOverlays();
           sync(State.getRunState());
         }
-      }));
+      }, "relic"));
     });
   }
 
@@ -478,15 +549,16 @@
           modeSignature = "";
           sync(State.getRunState());
         }
-      }));
+      }, unlocked ? getModeIconId(id) : "locked"));
     });
   }
 
   function renderClassOptions(state) {
     var save = state.persistent;
+    var synced = State.syncClassUnlocks ? State.syncClassUnlocks(save) : save;
     var signature = Data.CLASS_ORDER.map(function (id) {
-      return id + ":" + !!save.unlockedClasses[id] + ":" + save.selectedClassId + ":" + save.abyssStones;
-    }).join("|");
+      return id + ":" + !!synced.unlockedClasses[id] + ":" + synced.selectedClassId + ":" + synced.abyssStones;
+    }).join("|") + ":" + classUnlockMessage;
 
     if (signature === classSignature) {
       return;
@@ -495,23 +567,44 @@
     classSignature = signature;
     clearChildren(dom.classOptions);
 
+    if (classUnlockMessage) {
+      var message = global.document.createElement("p");
+      message.className = "class-unlock-message";
+      message.setAttribute("aria-live", "polite");
+      setText(message, classUnlockMessage);
+      dom.classOptions.appendChild(message);
+    }
+
     Data.CLASS_ORDER.forEach(function (id) {
       var classData = Data.CLASSES[id];
-      var unlocked = !!save.unlockedClasses[id];
-      var selected = save.selectedClassId === id;
-      var action = selected ? "선택됨" : (unlocked ? "선택" : "해금 " + classData.unlockCost);
-      var disabled = selected || (!unlocked && save.abyssStones < classData.unlockCost);
+      var cost = Math.max(0, Math.floor(classData.unlockCost || 0));
+      var stones = Math.max(0, Math.floor(synced.abyssStones || 0));
+      var unlocked = State.isClassUnlocked ? State.isClassUnlocked(id, synced) : !!synced.unlockedClasses[id];
+      var selected = synced.selectedClassId === id;
+      var canUnlock = State.canUnlockClass ? State.canUnlockClass(id, synced) : stones >= cost;
+      var action = selected ? "선택됨" : unlocked ? "선택" : canUnlock ? "해금 " + cost : "심연석 부족 " + stones + " / " + cost;
+      var meta = unlocked ? "해금됨" : "심연석 " + stones + " / " + cost;
+      var disabled = selected || (!unlocked && !canUnlock);
 
-      dom.classOptions.appendChild(createInfoButton("upgrade-card class-card" + (selected ? " is-selected" : ""), classData.name, classData.description, unlocked ? "해금됨" : "잠김", action, disabled, function () {
+      dom.classOptions.appendChild(createInfoButton("upgrade-card class-card" + (selected ? " is-selected" : ""), classData.name, classData.description, meta, action, disabled, function () {
+        var before = State.getRunState().persistent.abyssStones || 0;
         if (unlocked) {
-          State.selectClass(id);
+          if (State.selectClass(id)) {
+            classUnlockMessage = classData.name + "가 선택되었습니다.";
+            playSound("confirm");
+          }
         } else {
-          State.unlockClass(id);
+          if (State.unlockClass(id)) {
+            classUnlockMessage = classData.name + " 해금 완료 · " + classData.name + "가 선택되었습니다.";
+            playSound("confirm");
+          } else {
+            classUnlockMessage = "심연석 부족 " + before + " / " + cost;
+            playSound("error");
+          }
         }
-        playSound("confirm");
         classSignature = "";
         sync(State.getRunState());
-      }));
+      }, unlocked ? (classData.iconId || getClassIconId(id)) : "locked"));
     });
   }
 
@@ -538,13 +631,13 @@
       var action = maxed ? "최대" : "구매 " + cost;
       var disabled = maxed || save.abyssStones < cost;
 
-      dom.metaUpgradeOptions.appendChild(createInfoButton("upgrade-card meta-card", upgrade.name, upgrade.description, "Lv." + level + "/" + upgrade.maxLevel, action, disabled, function () {
+      dom.metaUpgradeOptions.appendChild(createInfoButton("upgrade-card meta-card", upgrade.name, upgrade.description, "레벨 " + level + "/" + upgrade.maxLevel, action, disabled, function () {
         if (State.purchaseMetaUpgrade(id)) {
           playSound("confirm");
         }
         metaSignature = "";
         sync(State.getRunState());
-      }));
+      }, "currency_abyss_stone"));
     });
   }
 
@@ -564,14 +657,14 @@
 
     Data.ACHIEVEMENTS.forEach(function (achievement) {
       var unlocked = !!save.achievements[achievement.id];
-      dom.achievementList.appendChild(createInfoButton("upgrade-card achievement-card" + (unlocked ? " is-selected" : ""), achievement.name, achievement.description, unlocked ? "달성" : "미달성", "보상 " + achievement.reward, true, null));
+      dom.achievementList.appendChild(createInfoButton("upgrade-card achievement-card" + (unlocked ? " is-selected" : ""), achievement.name, achievement.description, unlocked ? "달성" : "미달성", "보상 " + achievement.reward, true, null, "achievement"));
     });
   }
 
   function renderRecords(state) {
     var save = state.persistent;
     var records = save.records;
-    var signature = JSON.stringify(records) + ":" + save.totalRuns + ":" + save.runClearCount;
+    var signature = JSON.stringify(records) + ":" + save.totalRuns + ":" + save.runClearCount + ":" + (save.missions && save.missions.totalCompleted || 0);
 
     if (signature === recordsSignature) {
       return;
@@ -580,32 +673,200 @@
     recordsSignature = signature;
     clearChildren(dom.recordsContent);
 
-    dom.recordsContent.appendChild(createRecordLine("총 런", formatInteger(save.totalRuns)));
-    dom.recordsContent.appendChild(createRecordLine("총 클리어", formatInteger(save.runClearCount)));
-    dom.recordsContent.appendChild(createRecordLine("총 벽돌 파괴", formatInteger(records.totalBricksDestroyed)));
-    dom.recordsContent.appendChild(createRecordLine("총 아이템 획득", formatInteger(records.totalItemsCollected)));
-    dom.recordsContent.appendChild(createRecordLine("총 보스 처치", formatInteger(records.totalBossesDefeated)));
-    dom.recordsContent.appendChild(createRecordLine("최대 동시 공", formatInteger(records.maxActiveBalls)));
-    dom.recordsContent.appendChild(createRecordLine("표준 최고 점수", formatInteger(records.standard.bestScore)));
-    dom.recordsContent.appendChild(createRecordLine("표준 최고 스테이지", formatInteger(records.standard.bestStage)));
-    dom.recordsContent.appendChild(createRecordLine("표준 최단 클리어", records.standard.fastestClearTime ? formatTime(records.standard.fastestClearTime) : "-"));
-    dom.recordsContent.appendChild(createRecordLine("무한 최고 점수", formatInteger(records.endless.bestScore)));
-    dom.recordsContent.appendChild(createRecordLine("무한 최고 스테이지", formatInteger(records.endless.bestStage)));
-    dom.recordsContent.appendChild(createRecordLine("무한 보스 처치", formatInteger(records.endless.bestBossesDefeated)));
+    dom.recordsContent.appendChild(createRecordLine("총 런", formatInteger(save.totalRuns), "record"));
+    dom.recordsContent.appendChild(createRecordLine("총 클리어", formatInteger(save.runClearCount), "achievement"));
+    dom.recordsContent.appendChild(createRecordLine("총 벽돌 파괴", formatInteger(records.totalBricksDestroyed), "score"));
+    dom.recordsContent.appendChild(createRecordLine("총 아이템 획득", formatInteger(records.totalItemsCollected), "item"));
+    dom.recordsContent.appendChild(createRecordLine("총 보스 처치", formatInteger(records.totalBossesDefeated), "stage"));
+    dom.recordsContent.appendChild(createRecordLine("최대 동시 공", formatInteger(records.maxActiveBalls), "item_multiball"));
+    dom.recordsContent.appendChild(createRecordLine("표준 최고 점수", formatInteger(records.standard.bestScore), "score"));
+    dom.recordsContent.appendChild(createRecordLine("표준 최고 스테이지", formatInteger(records.standard.bestStage), "stage"));
+    dom.recordsContent.appendChild(createRecordLine("표준 최단 클리어", records.standard.fastestClearTime ? formatTime(records.standard.fastestClearTime) : "-", "record"));
+    dom.recordsContent.appendChild(createRecordLine("무한 최고 점수", formatInteger(records.endless.bestScore), "mode_endless"));
+    dom.recordsContent.appendChild(createRecordLine("무한 최고 스테이지", formatInteger(records.endless.bestStage), "stage"));
+    dom.recordsContent.appendChild(createRecordLine("무한 보스 처치", formatInteger(records.endless.bestBossesDefeated), "stage"));
+    dom.recordsContent.appendChild(createRecordLine("미션 완료", formatInteger(save.missions && save.missions.totalCompleted), "mission_no_miss"));
 
-    ["one_life", "no_items", "high_speed"].forEach(function (id) {
+    Data.GAME_MODE_ORDER.forEach(function (id) {
       var mode = Data.GAME_MODES[id];
+      if (!mode || !mode.rules || !mode.rules.challenge) {
+        return;
+      }
       var record = records.challenges[id];
-      dom.recordsContent.appendChild(createRecordLine(mode.name, (record.cleared ? "클리어 " + formatInteger(record.clearCount) + "회" : "미클리어") + " / 최고 " + formatInteger(record.bestScore)));
+      if (!record) {
+        return;
+      }
+      dom.recordsContent.appendChild(createRecordLine(mode.name, (record.cleared ? "클리어 " + formatInteger(record.clearCount) + "회" : "미클리어") + " / 최고 " + formatInteger(record.bestScore), getModeIconId(id)));
     });
+  }
+
+  function renderTabs(container, tabs, active, onSelect) {
+    clearChildren(container);
+    tabs.forEach(function (tab) {
+      var button = global.document.createElement("button");
+      button.type = "button";
+      button.className = "button-secondary" + (tab.id === active ? " is-selected" : "");
+      button.textContent = tab.label;
+      button.addEventListener("click", function () {
+        onSelect(tab.id);
+      });
+      container.appendChild(button);
+    });
+  }
+
+  function appendDiscoveryCard(container, group, item, discovered) {
+    var hidden = !discovered;
+    var name = hidden ? "???" : item.name;
+    var description = hidden ? "아직 발견하지 못했습니다." : (item.description || "");
+    var category = hidden ? "미발견" : (item.category || (item.tags && item.tags[0]) || "발견");
+    var iconId = hidden ? "locked" : (item.iconId || "compendium");
+
+    container.appendChild(createInfoButton("upgrade-card", name, description, category, hidden ? "미발견" : "발견", true, null, iconId));
+  }
+
+  function renderCompendium(state) {
+    var save = state.persistent;
+    var discovered = save.discovered || {};
+    var signature = compendiumTab + ":" + JSON.stringify(discovered);
+    var tabs = [
+      { id: "upgrades", label: "능력" },
+      { id: "relics", label: "유물" },
+      { id: "evolutions", label: "진화" },
+      { id: "items", label: "아이템" },
+      { id: "bosses", label: "보스" },
+      { id: "zones", label: "구역" }
+    ];
+
+    renderTabs(dom.compendiumTabs, tabs, compendiumTab, function (id) {
+      compendiumTab = id;
+      compendiumSignature = "";
+      renderCompendium(State.getRunState());
+    });
+
+    if (signature === compendiumSignature) {
+      return;
+    }
+
+    clearChildren(dom.compendiumContent);
+    if (compendiumTab === "upgrades") {
+      Data.UPGRADES.forEach(function (item) { appendDiscoveryCard(dom.compendiumContent, "upgrades", item, discovered.upgrades && discovered.upgrades[item.id]); });
+    } else if (compendiumTab === "relics") {
+      Data.RELICS.forEach(function (item) { appendDiscoveryCard(dom.compendiumContent, "relics", item, discovered.relics && discovered.relics[item.id]); });
+    } else if (compendiumTab === "evolutions") {
+      Data.EVOLUTIONS.forEach(function (item) { appendDiscoveryCard(dom.compendiumContent, "evolutions", item, discovered.evolutions && discovered.evolutions[item.id]); });
+    } else if (compendiumTab === "items") {
+      Data.ITEMS.definitions.forEach(function (item) { appendDiscoveryCard(dom.compendiumContent, "items", item, discovered.items && discovered.items[item.id]); });
+    } else if (compendiumTab === "bosses") {
+      Object.keys(Data.BOSSES).forEach(function (id) { appendDiscoveryCard(dom.compendiumContent, "bosses", Data.BOSSES[id], discovered.bosses && discovered.bosses[id]); });
+    } else {
+      Object.keys(Data.ZONES).forEach(function (id) { appendDiscoveryCard(dom.compendiumContent, "zones", Data.ZONES[id], discovered.zones && discovered.zones[id]); });
+    }
+    compendiumSignature = signature;
+  }
+
+  function appendCosmeticCard(container, kind, item, unlocked, selected) {
+    var action = selected ? "선택됨" : unlocked ? "선택" : "잠김";
+    var description = unlocked ? item.description : (item.unlockCondition || "조건을 만족하면 해금됩니다.");
+    var iconId = unlocked ? item.iconId : "locked";
+
+    container.appendChild(createInfoButton("upgrade-card cosmetic-card" + (selected ? " is-selected" : ""), item.name, description, unlocked ? "해금" : "잠김", action, !unlocked || selected, function () {
+      if (State.selectCosmetic(kind, item.id)) {
+        playSound("confirm");
+        cosmeticsSignature = "";
+        sync(State.getRunState());
+      }
+    }, iconId));
+  }
+
+  function renderCosmetics(state) {
+    var cosmetics = state.persistent.cosmetics || {};
+    var signature = cosmeticsTab + ":" + JSON.stringify(cosmetics);
+    var tabs = [{ id: "ball", label: "공" }, { id: "paddle", label: "패들" }];
+
+    renderTabs(dom.cosmeticsTabs, tabs, cosmeticsTab, function (id) {
+      cosmeticsTab = id;
+      cosmeticsSignature = "";
+      renderCosmetics(State.getRunState());
+    });
+
+    if (signature === cosmeticsSignature) {
+      return;
+    }
+
+    clearChildren(dom.cosmeticsContent);
+    if (cosmeticsTab === "ball") {
+      Object.keys(Data.COSMETICS.ballSkins).forEach(function (id) {
+        appendCosmeticCard(dom.cosmeticsContent, "ball", Data.COSMETICS.ballSkins[id], cosmetics.unlockedBallSkins && cosmetics.unlockedBallSkins[id], cosmetics.selectedBallSkinId === id);
+      });
+    } else {
+      Object.keys(Data.COSMETICS.paddleSkins).forEach(function (id) {
+        appendCosmeticCard(dom.cosmeticsContent, "paddle", Data.COSMETICS.paddleSkins[id], cosmetics.unlockedPaddleSkins && cosmetics.unlockedPaddleSkins[id], cosmetics.selectedPaddleSkinId === id);
+      });
+    }
+    cosmeticsSignature = signature;
   }
 
   function renderSettings(state) {
     var settings = state.persistent.settings;
 
-    dom.soundToggle.checked = !!settings.sound;
-    dom.vibrationToggle.checked = !!settings.vibration;
+    dom.soundToggle.checked = settings.soundEnabled !== undefined ? !!settings.soundEnabled : !!settings.sound;
+    dom.vibrationToggle.checked = settings.vibrationEnabled !== undefined ? !!settings.vibrationEnabled : !!settings.vibration;
     dom.reducedEffectsToggle.checked = !!settings.reducedEffects;
+  }
+
+  function decorateStaticIcons() {
+    addButtonIcon(dom.startButton, "continue");
+    addButtonIcon(dom.newRunButton, "restart");
+    addButtonIcon(dom.modeButton, "mode_standard");
+    addButtonIcon(dom.classButton, "class_balanced");
+    addButtonIcon(dom.metaButton, "currency_abyss_stone");
+    addButtonIcon(dom.achievementButton, "achievement");
+    addButtonIcon(dom.recordsButton, "record");
+    addButtonIcon(dom.compendiumButton, "compendium");
+    addButtonIcon(dom.cosmeticsButton, "cosmetic");
+    addButtonIcon(dom.settingsButton, "settings");
+    addButtonIcon(dom.launchButton, "continue");
+    addButtonIcon(dom.pauseButton, "pause");
+    addButtonIcon(dom.restartButton, "restart");
+    addButtonIcon(dom.resumeButton, "continue");
+    addButtonIcon(dom.pauseSettingsButton, "settings");
+    addButtonIcon(dom.pauseRestartButton, "restart");
+    addButtonIcon(dom.continueButton, "continue");
+    addButtonIcon(dom.nextStageButton, "upgrade");
+    addButtonIcon(dom.stageRestartButton, "restart");
+    addButtonIcon(dom.saveExportButton, "record");
+    addButtonIcon(dom.saveImportButton, "continue");
+    addButtonIcon(dom.saveResetButton, "restart");
+    addButtonIcon(dom.gameoverRestartButton, "restart");
+    addButtonIcon(dom.gameoverMetaButton, "currency_abyss_stone");
+    addButtonIcon(dom.gameoverRecordsButton, "record");
+    addButtonIcon(dom.runClearRestartButton, "restart");
+    addButtonIcon(dom.runClearMetaButton, "currency_abyss_stone");
+    addButtonIcon(dom.runClearRecordsButton, "record");
+    addButtonIcon(dom.compendiumCloseButton, "continue");
+    addButtonIcon(dom.cosmeticsCloseButton, "continue");
+
+    var hudIcons = ["life", "score", "stage", "mode_standard"];
+    Array.prototype.forEach.call(global.document.querySelectorAll("#hud .hud-stat span"), function (label, index) {
+      if (label.querySelector(".label-icon")) {
+        return;
+      }
+      var icon = global.document.createElement("span");
+      icon.className = "label-icon";
+      icon.innerHTML = getIconMarkup(hudIcons[index] || "record");
+      label.insertBefore(icon, label.firstChild);
+    });
+
+    var settingIcons = ["settings", "life", "stage"];
+    Array.prototype.forEach.call(global.document.querySelectorAll(".setting-row > span"), function (label, index) {
+      if (label.querySelector(".label-icon")) {
+        return;
+      }
+      var icon = global.document.createElement("span");
+      icon.className = "label-icon";
+      icon.innerHTML = getIconMarkup(settingIcons[index] || "settings");
+      label.insertBefore(icon, label.firstChild);
+    });
   }
 
   function renderLobby(state) {
@@ -641,6 +902,30 @@
     }).join(", ");
   }
 
+  function getMissionResultText(state) {
+    var completed = state.completedStageMissions ? state.completedStageMissions.length : 0;
+    var failed = state.failedStageMissions ? state.failedStageMissions.length : 0;
+
+    return "미션 완료 " + formatInteger(completed) + "개 / 실패 " + formatInteger(failed) + "개";
+  }
+
+  function getRunSummaryText(state) {
+    var summary = state.runSummary || {};
+    var stats = summary.stats || state.runStats || {};
+    var parts = [
+      "최대 콤보 " + formatInteger(summary.bestCombo || stats.bestCombo),
+      "약점 타격 " + formatInteger(stats.weakHits),
+      "정밀 반사 " + formatInteger(stats.precisionHits),
+      "레이저 파괴 " + formatInteger(stats.laserBreaks)
+    ];
+
+    if (summary.rewardStones !== undefined) {
+      parts.push("획득 심연석 " + formatInteger(summary.rewardStones));
+    }
+
+    return parts.join(" / ");
+  }
+
   function renderGameover(state) {
     var classData = getClassData(state);
 
@@ -651,8 +936,10 @@
     setText(dom.gameoverBricks, formatInteger(state.runStats.bricksDestroyed));
     setText(dom.gameoverItems, formatInteger(state.runStats.itemsCollected));
     setText(dom.gameoverBosses, formatInteger(state.runStats.bossesDefeated));
+    setText(dom.gameoverMissions, getMissionResultText(state));
     setText(dom.gameoverStones, formatInteger(state.earnedAbyssStones));
     setText(dom.gameoverOwnedStones, formatInteger(state.persistent.abyssStones));
+    setText(dom.gameoverSummary, getRunSummaryText(state));
     setText(dom.gameoverBuild, classData.name + " / " + getRelicNames(state));
     setText(dom.gameoverAchievements, getNewAchievementText(state));
   }
@@ -667,9 +954,11 @@
     setText(dom.runClearTime, formatTime(state.runElapsedTime));
     setText(dom.runClearBricks, formatInteger(state.runStats.bricksDestroyed));
     setText(dom.runClearBosses, formatInteger(state.runStats.bossesDefeated));
+    setText(dom.runClearMissions, getMissionResultText(state));
     setText(dom.runClearStones, formatInteger(state.earnedAbyssStones));
     setText(dom.runClearOwnedStones, formatInteger(state.persistent.abyssStones));
     setText(dom.runClearCount, formatInteger(state.persistent.runClearCount));
+    setText(dom.runClearSummary, getRunSummaryText(state));
     setText(dom.runClearBuild, classData.name + " / " + getRelicNames(state));
     setText(dom.runClearAchievements, getNewAchievementText(state));
     setText(dom.runClearUpgrades, text);
@@ -691,6 +980,8 @@
     setHidden(dom.metaOverlay, state.mode !== Data.MODES.META);
     setHidden(dom.achievementOverlay, state.mode !== Data.MODES.ACHIEVEMENTS);
     setHidden(dom.recordsOverlay, state.mode !== Data.MODES.RECORDS);
+    setHidden(dom.compendiumOverlay, state.mode !== Data.MODES.COMPENDIUM);
+    setHidden(dom.cosmeticsOverlay, state.mode !== Data.MODES.COSMETICS);
     setHidden(dom.settingsOverlay, state.mode !== Data.MODES.SETTINGS);
     setHidden(dom.gameoverOverlay, state.mode !== Data.MODES.GAMEOVER);
     setHidden(dom.runClearOverlay, state.mode !== Data.MODES.RUN_CLEAR);
@@ -703,6 +994,7 @@
     }
     if (state.mode === Data.MODES.STAGE_CLEAR) {
       setText(dom.stageClearScore, formatInteger(state.score));
+      setText(dom.stageMissionResult, getMissionText(state) || getMissionResultText(state));
     }
     if (state.mode === Data.MODES.UPGRADE) {
       setText(dom.upgradeTitle, "스테이지 " + formatInteger(state.stage) + " 클리어");
@@ -742,6 +1034,16 @@
       renderRecords(state);
     } else {
       recordsSignature = "";
+    }
+    if (state.mode === Data.MODES.COMPENDIUM) {
+      renderCompendium(state);
+    } else {
+      compendiumSignature = "";
+    }
+    if (state.mode === Data.MODES.COSMETICS) {
+      renderCosmetics(state);
+    } else {
+      cosmeticsSignature = "";
     }
     if (state.mode === Data.MODES.SETTINGS) {
       renderSettings(state);
@@ -943,9 +1245,14 @@
   }
 
   function applySettings() {
+    var sound = !!dom.soundToggle.checked;
+    var vibration = !!dom.vibrationToggle.checked;
+
     State.updateSettings({
-      sound: !!dom.soundToggle.checked,
-      vibration: !!dom.vibrationToggle.checked,
+      sound: sound,
+      soundEnabled: sound,
+      vibration: vibration,
+      vibrationEnabled: vibration,
       reducedEffects: !!dom.reducedEffectsToggle.checked
     });
     setText(dom.settingsMessage, "설정을 저장했습니다.");
@@ -1086,6 +1393,8 @@
     dom.metaButton.addEventListener("click", function () { openMenu(Data.MODES.META); });
     dom.achievementButton.addEventListener("click", function () { openMenu(Data.MODES.ACHIEVEMENTS); });
     dom.recordsButton.addEventListener("click", function () { openMenu(Data.MODES.RECORDS); });
+    dom.compendiumButton.addEventListener("click", function () { openMenu(Data.MODES.COMPENDIUM); });
+    dom.cosmeticsButton.addEventListener("click", function () { openMenu(Data.MODES.COSMETICS); });
     dom.settingsButton.addEventListener("click", function () { openMenu(Data.MODES.SETTINGS); });
     dom.launchButton.addEventListener("click", launch);
     dom.pauseButton.addEventListener("click", pauseGame);
@@ -1102,6 +1411,8 @@
     dom.metaCloseButton.addEventListener("click", closeMenu);
     dom.achievementCloseButton.addEventListener("click", closeMenu);
     dom.recordsCloseButton.addEventListener("click", closeMenu);
+    dom.compendiumCloseButton.addEventListener("click", closeMenu);
+    dom.cosmeticsCloseButton.addEventListener("click", closeMenu);
     dom.settingsCloseButton.addEventListener("click", closeMenu);
     dom.soundToggle.addEventListener("change", applySettings);
     dom.vibrationToggle.addEventListener("change", applySettings);
@@ -1134,6 +1445,7 @@
     }
 
     collectDom();
+    decorateStaticIcons();
     bindEvents();
     initialized = true;
     sync(State.getRunState());
