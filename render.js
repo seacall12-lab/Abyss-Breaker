@@ -151,9 +151,27 @@
   function drawPaddle(ctx, state) {
     var paddle = state.paddle;
     var gradient = ctx.createLinearGradient(paddle.x, paddle.y, paddle.x, paddle.y + paddle.height);
+    var skinId = state.selectedPaddleSkinId || (state.persistent && state.persistent.cosmetics && state.persistent.cosmetics.selectedPaddleSkinId) || "default_paddle";
 
-    gradient.addColorStop(0, "#f7fbff");
-    gradient.addColorStop(1, "#65c8ff");
+    if (skinId === "guardian_paddle") {
+      gradient.addColorStop(0, "#f7fbff");
+      gradient.addColorStop(1, "#9ee6a8");
+    } else if (skinId === "destroyer_paddle") {
+      gradient.addColorStop(0, "#ffd5cb");
+      gradient.addColorStop(1, "#e65f4b");
+    } else if (skinId === "alchemy_paddle") {
+      gradient.addColorStop(0, "#fff1b8");
+      gradient.addColorStop(1, "#31c487");
+    } else if (skinId === "tuner_paddle") {
+      gradient.addColorStop(0, "#f7fbff");
+      gradient.addColorStop(1, "#b06cff");
+    } else if (skinId === "abyss_paddle") {
+      gradient.addColorStop(0, "#d8e7ff");
+      gradient.addColorStop(1, "#f2c94c");
+    } else {
+      gradient.addColorStop(0, "#f7fbff");
+      gradient.addColorStop(1, "#65c8ff");
+    }
 
     ctx.save();
     ctx.shadowColor = "rgba(101, 200, 255, 0.42)";
@@ -239,9 +257,11 @@
     ctx.save();
     ctx.beginPath();
     ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-    ctx.fillStyle = ball.attached ? "#dcefff" : "#ffffff";
+    var state = State.getRunState();
+    var skinId = state.selectedBallSkinId || (state.persistent && state.persistent.cosmetics && state.persistent.cosmetics.selectedBallSkinId) || "default_ball";
+    ctx.fillStyle = skinId === "split_orb" ? "#f2c94c" : skinId === "precision_orb" ? "#b06cff" : skinId === "abyss_ball" ? "#9ee6a8" : (ball.attached ? "#dcefff" : "#ffffff");
     ctx.fill();
-    ctx.strokeStyle = "#65c8ff";
+    ctx.strokeStyle = skinId === "default_ball" ? "#65c8ff" : "#ffffff";
     ctx.lineWidth = Data.BALL.strokeWidth || 1.5;
     ctx.stroke();
     ctx.restore();
@@ -284,7 +304,91 @@
     ctx.font = "900 12px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(boss.shieldActive ? "SHIELD" : boss.name, boss.x + boss.width / 2, boss.y + boss.height / 2 - 2);
+    ctx.fillText(boss.shieldActive ? "방어" : boss.name, boss.x + boss.width / 2, boss.y + boss.height / 2 - 2);
+    ctx.fillStyle = (boss.weakTimer || boss.forcedWeakTimer) > 0 ? "#ffffff" : "#f2c94c";
+    ctx.beginPath();
+    ctx.arc(boss.weakPointSide === "right" ? boss.x + boss.width - 16 : boss.x + 16, boss.y + 9, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawItemPictogram(ctx, item) {
+    var cx = item.x + item.width / 2;
+    var cy = item.y + item.height / 2;
+    var type = item.type || "";
+
+    ctx.save();
+    ctx.strokeStyle = "#061014";
+    ctx.fillStyle = "#061014";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (type === "multi_ball") {
+      [[cx - 5, cy - 3], [cx + 5, cy - 3], [cx, cy + 5]].forEach(function (point) {
+        ctx.beginPath();
+        ctx.arc(point[0], point[1], 3, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+    } else if (type === "paddle_expand") {
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, cy + 4);
+      ctx.lineTo(cx + 8, cy + 4);
+      ctx.moveTo(cx - 8, cy + 4);
+      ctx.lineTo(cx - 4, cy);
+      ctx.moveTo(cx - 8, cy + 4);
+      ctx.lineTo(cx - 4, cy + 8);
+      ctx.moveTo(cx + 8, cy + 4);
+      ctx.lineTo(cx + 4, cy);
+      ctx.moveTo(cx + 8, cy + 4);
+      ctx.lineTo(cx + 4, cy + 8);
+      ctx.stroke();
+    } else if (type === "magnetic_paddle") {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI);
+      ctx.moveTo(cx - 6, cy);
+      ctx.lineTo(cx - 6, cy - 5);
+      ctx.moveTo(cx + 6, cy);
+      ctx.lineTo(cx + 6, cy - 5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy + 5, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (type === "laser_paddle") {
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, cy + 7);
+      ctx.lineTo(cx + 8, cy + 7);
+      ctx.moveTo(cx, cy + 5);
+      ctx.lineTo(cx, cy - 8);
+      ctx.moveTo(cx - 4, cy);
+      ctx.lineTo(cx - 2, cy - 8);
+      ctx.moveTo(cx + 4, cy);
+      ctx.lineTo(cx + 2, cy - 8);
+      ctx.stroke();
+    } else if (type === "bottom_barrier") {
+      ctx.beginPath();
+      ctx.arc(cx, cy - 4, 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, cy + 7);
+      ctx.lineTo(cx + 8, cy + 7);
+      ctx.moveTo(cx - 6, cy + 3);
+      ctx.quadraticCurveTo(cx, cy + 1, cx + 6, cy + 3);
+      ctx.stroke();
+    } else if (type === "slow_ball") {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+      ctx.moveTo(cx, cy - 4);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx + 4, cy + 3);
+      ctx.stroke();
+    } else {
+      ctx.font = "900 13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(item.symbol || "?", cx, cy);
+    }
+
     ctx.restore();
   }
 
@@ -298,11 +402,7 @@
       ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.fillStyle = "#061014";
-      ctx.font = "900 14px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(item.symbol, item.x + item.width / 2, item.y + item.height / 2);
+      drawItemPictogram(ctx, item);
       ctx.restore();
     });
   }
