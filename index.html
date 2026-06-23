@@ -11,11 +11,11 @@
 </head>
 <body>
   <div id="app">
-    <main id="game-shell" aria-label="Abyss Breaker game">
+    <main id="game-shell" aria-label="Abyss Breaker 게임">
       <header id="hud" aria-label="게임 상태">
         <div class="hud-stat"><span>생명</span><strong id="lives-value">3</strong></div>
         <div class="hud-stat"><span>점수</span><strong id="score-value">0</strong></div>
-        <div class="hud-stat"><span>스테이지</span><strong id="stage-value">1/10</strong></div>
+        <div class="hud-stat"><span>스테이지</span><strong id="stage-value">1/20</strong></div>
         <div class="hud-stat"><span>모드</span><strong id="mode-value">표준</strong></div>
       </header>
 
@@ -35,13 +35,13 @@
         <div class="control-actions">
           <button id="launch-button" type="button">발사</button>
           <button id="pause-button" type="button">일시정지</button>
-          <button id="restart-button" type="button">재시작</button>
+          <button id="restart-button" type="button">다시</button>
         </div>
       </footer>
 
       <section id="start-overlay" class="overlay" aria-label="로비">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Abyss Breaker v2.0.0</p>
+          <p class="overlay-kicker">Abyss Breaker v3.0.0</p>
           <h1>Abyss Breaker</h1>
           <dl class="result-list result-list-three">
             <div><dt>심연석</dt><dd id="lobby-stones">0</dd></div>
@@ -54,12 +54,14 @@
           <p id="lobby-continue-info" class="overlay-copy is-hidden"></p>
           <button id="new-run-button" type="button" class="button-secondary is-hidden">새로 시작</button>
           <div class="overlay-actions lobby-actions">
-            <button id="start-button" type="button">런 시작</button>
+            <button id="start-button" type="button">시작</button>
             <button id="mode-button" type="button" class="button-secondary">게임 모드</button>
             <button id="class-button" type="button" class="button-secondary">클래스</button>
             <button id="meta-button" type="button" class="button-secondary">영구 성장</button>
             <button id="achievement-button" type="button" class="button-secondary">업적</button>
             <button id="records-button" type="button" class="button-secondary">기록</button>
+            <button id="compendium-button" type="button" class="button-secondary">도감</button>
+            <button id="cosmetics-button" type="button" class="button-secondary">외형</button>
             <button id="settings-button" type="button" class="button-secondary">설정</button>
           </div>
         </div>
@@ -67,19 +69,19 @@
 
       <section id="pause-overlay" class="overlay is-hidden" aria-label="일시정지">
         <div class="overlay-panel">
-          <p class="overlay-kicker">Paused</p>
+          <p class="overlay-kicker">일시정지</p>
           <h2>일시정지</h2>
           <p id="pause-run-info" class="overlay-copy">현재 런 정보</p>
           <button id="resume-button" type="button">계속</button>
           <button id="pause-settings-button" type="button" class="button-secondary">설정</button>
           <button id="pause-quit-button" type="button" class="button-secondary">런 포기</button>
-          <button id="pause-restart-button" type="button" class="button-secondary">새 런</button>
+          <button id="pause-restart-button" type="button" class="button-secondary">다시 시작</button>
         </div>
       </section>
 
       <section id="life-lost-overlay" class="overlay is-hidden" aria-label="생명 손실">
         <div class="overlay-panel">
-          <p class="overlay-kicker">Life Lost</p>
+          <p class="overlay-kicker">공을 놓쳤습니다</p>
           <h2>공을 놓쳤습니다</h2>
           <p class="overlay-copy">보스 HP와 남은 벽돌은 유지됩니다.</p>
           <button id="continue-button" type="button">계속</button>
@@ -88,9 +90,12 @@
 
       <section id="stage-clear-overlay" class="overlay is-hidden" aria-label="스테이지 클리어">
         <div class="overlay-panel">
-          <p class="overlay-kicker">Stage Clear</p>
+          <p class="overlay-kicker">스테이지 클리어</p>
           <h2>스테이지 클리어</h2>
-          <dl class="result-list"><div><dt>점수</dt><dd id="stage-clear-score">0</dd></div></dl>
+          <dl class="result-list">
+            <div><dt>점수</dt><dd id="stage-clear-score">0</dd></div>
+          </dl>
+          <p id="stage-mission-result" class="overlay-copy"></p>
           <button id="next-stage-button" type="button">능력 선택</button>
           <button id="stage-restart-button" type="button" class="button-secondary">현재 스테이지 다시</button>
         </div>
@@ -98,7 +103,7 @@
 
       <section id="upgrade-overlay" class="overlay is-hidden" aria-label="능력 선택">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Upgrade</p>
+          <p class="overlay-kicker">능력 선택</p>
           <h2 id="upgrade-title">능력 선택</h2>
           <p id="upgrade-subtitle" class="overlay-copy">하나를 선택하면 다음 스테이지가 시작됩니다.</p>
           <div id="upgrade-options" class="upgrade-options" aria-live="polite"></div>
@@ -107,16 +112,16 @@
 
       <section id="relic-overlay" class="overlay is-hidden" aria-label="유물 선택">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Relic</p>
+          <p class="overlay-kicker">유물 선택</p>
           <h2 id="relic-title">유물 선택</h2>
-          <p id="relic-subtitle" class="overlay-copy">이번 런에 적용할 유물을 선택하세요.</p>
+          <p id="relic-subtitle" class="overlay-copy">보스 처치 보상입니다. 이번 런에 적용할 유물을 선택하세요.</p>
           <div id="relic-options" class="upgrade-options" aria-live="polite"></div>
         </div>
       </section>
 
       <section id="mode-overlay" class="overlay is-hidden" aria-label="게임 모드">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Mode</p>
+          <p class="overlay-kicker">게임 모드</p>
           <h2>게임 모드</h2>
           <div id="mode-options" class="upgrade-options scroll-panel" aria-live="polite"></div>
           <button id="mode-close-button" type="button" class="button-secondary">닫기</button>
@@ -125,7 +130,7 @@
 
       <section id="class-overlay" class="overlay is-hidden" aria-label="클래스 선택">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Class</p>
+          <p class="overlay-kicker">클래스</p>
           <h2>클래스</h2>
           <div id="class-options" class="upgrade-options scroll-panel" aria-live="polite"></div>
           <button id="class-close-button" type="button" class="button-secondary">닫기</button>
@@ -134,7 +139,7 @@
 
       <section id="meta-overlay" class="overlay is-hidden" aria-label="영구 성장">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Permanent Growth</p>
+          <p class="overlay-kicker">영구 성장</p>
           <h2>영구 성장</h2>
           <p class="overlay-copy">보유 심연석 <strong id="meta-stones-value">0</strong></p>
           <div id="meta-upgrade-options" class="upgrade-options scroll-panel" aria-live="polite"></div>
@@ -144,7 +149,7 @@
 
       <section id="achievement-overlay" class="overlay is-hidden" aria-label="업적">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Achievements</p>
+          <p class="overlay-kicker">업적</p>
           <h2>업적</h2>
           <p id="achievement-summary" class="overlay-copy">0 / 0</p>
           <div id="achievement-list" class="upgrade-options scroll-panel" aria-live="polite"></div>
@@ -154,18 +159,38 @@
 
       <section id="records-overlay" class="overlay is-hidden" aria-label="기록">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Records</p>
+          <p class="overlay-kicker">기록</p>
           <h2>기록</h2>
           <div id="records-content" class="records-content scroll-panel"></div>
           <button id="records-close-button" type="button" class="button-secondary">닫기</button>
         </div>
       </section>
 
+      <section id="compendium-overlay" class="overlay is-hidden" aria-label="도감">
+        <div class="overlay-panel overlay-panel-wide">
+          <p class="overlay-kicker">도감</p>
+          <h2>도감</h2>
+          <div id="compendium-tabs" class="tab-row" aria-label="도감 분류"></div>
+          <div id="compendium-content" class="upgrade-options scroll-panel" aria-live="polite"></div>
+          <button id="compendium-close-button" type="button" class="button-secondary">닫기</button>
+        </div>
+      </section>
+
+      <section id="cosmetics-overlay" class="overlay is-hidden" aria-label="외형">
+        <div class="overlay-panel overlay-panel-wide">
+          <p class="overlay-kicker">외형</p>
+          <h2>외형</h2>
+          <div id="cosmetics-tabs" class="tab-row" aria-label="외형 분류"></div>
+          <div id="cosmetics-content" class="upgrade-options scroll-panel" aria-live="polite"></div>
+          <button id="cosmetics-close-button" type="button" class="button-secondary">닫기</button>
+        </div>
+      </section>
+
       <section id="settings-overlay" class="overlay is-hidden" aria-label="설정">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Settings</p>
+          <p class="overlay-kicker">설정</p>
           <h2>설정</h2>
-          <label class="setting-row"><span>사운드</span><input id="sound-toggle" type="checkbox"></label>
+          <label class="setting-row"><span>효과음</span><input id="sound-toggle" type="checkbox"></label>
           <label class="setting-row"><span>진동</span><input id="vibration-toggle" type="checkbox"></label>
           <label class="setting-row"><span>효과 감소</span><input id="reduced-effects-toggle" type="checkbox"></label>
           <textarea id="save-data-input" rows="6" spellcheck="false" placeholder="저장 JSON을 내보내거나 붙여넣으세요."></textarea>
@@ -181,7 +206,7 @@
 
       <section id="gameover-overlay" class="overlay is-hidden" aria-label="게임오버">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Game Over</p>
+          <p class="overlay-kicker">게임오버</p>
           <h2>게임오버</h2>
           <dl class="result-list result-list-three">
             <div><dt>모드</dt><dd id="gameover-mode">표준</dd></div>
@@ -191,9 +216,11 @@
             <div><dt>벽돌</dt><dd id="gameover-bricks">0</dd></div>
             <div><dt>아이템</dt><dd id="gameover-items">0</dd></div>
             <div><dt>보스</dt><dd id="gameover-bosses">0</dd></div>
+            <div><dt>미션</dt><dd id="gameover-missions">0</dd></div>
             <div><dt>획득 심연석</dt><dd id="gameover-stones">0</dd></div>
             <div><dt>보유 심연석</dt><dd id="gameover-owned-stones">0</dd></div>
           </dl>
+          <div id="gameover-summary" class="records-content"></div>
           <p id="gameover-build" class="overlay-copy">균형자 / 유물 없음</p>
           <p id="gameover-achievements" class="overlay-copy"></p>
           <div class="overlay-actions">
@@ -207,7 +234,7 @@
 
       <section id="run-clear-overlay" class="overlay is-hidden" aria-label="런 클리어">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Run Clear</p>
+          <p class="overlay-kicker">심연 돌파 완료</p>
           <h2>심연 돌파 완료</h2>
           <dl class="result-list result-list-three">
             <div><dt>모드</dt><dd id="run-clear-mode">표준</dd></div>
@@ -216,10 +243,12 @@
             <div><dt>시간</dt><dd id="run-clear-time">0초</dd></div>
             <div><dt>벽돌</dt><dd id="run-clear-bricks">0</dd></div>
             <div><dt>보스</dt><dd id="run-clear-bosses">0</dd></div>
+            <div><dt>미션</dt><dd id="run-clear-missions">0</dd></div>
             <div><dt>획득 심연석</dt><dd id="run-clear-stones">0</dd></div>
             <div><dt>보유 심연석</dt><dd id="run-clear-owned-stones">0</dd></div>
             <div><dt>클리어</dt><dd id="run-clear-count">0</dd></div>
           </dl>
+          <div id="run-clear-summary" class="records-content"></div>
           <p id="run-clear-build" class="overlay-copy">균형자 / 유물 없음</p>
           <p id="run-clear-achievements" class="overlay-copy"></p>
           <div id="run-clear-upgrades" class="run-clear-upgrades"></div>
