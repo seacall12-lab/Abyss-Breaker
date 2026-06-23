@@ -73,8 +73,10 @@
       stage.backgroundVariant = number % 10;
 
       if (number % Math.max(1, rules.bossEvery || 5) === 0) {
+        var endlessBosses = ["sentinel", "gatekeeper", "mirror_lord", "core"];
+        var bossIndex = Math.floor(number / Math.max(1, rules.bossEvery || 5) - 1) % endlessBosses.length;
         stage.type = "boss";
-        stage.bossId = number % 10 === 0 ? "core" : "sentinel";
+        stage.bossId = endlessBosses[bossIndex];
       } else {
         stage.type = "normal";
         stage.bossId = null;
@@ -196,6 +198,138 @@
     return !!(state.activeEvolutions && state.activeEvolutions[id]);
   }
 
+  function discover(group, id) {
+    if (State.discover) {
+      State.discover(group, id);
+      stateSyncPersistent(State.getRunState());
+    }
+  }
+
+  function stateSyncPersistent(state) {
+    if (state && State.getRunState && state === State.getRunState()) {
+      state.persistent = State.getRunState().persistent;
+    }
+  }
+
+  function getStageMissionData(state) {
+    var stage = getStageData(state);
+    var id = stage.stageMissionId || (Data.STAGE_MISSION_BY_STAGE && Data.STAGE_MISSION_BY_STAGE[state.stage]);
+    return id && Data.STAGE_MISSIONS ? Data.STAGE_MISSIONS[id] : null;
+  }
+
+  function startStageMission(state) {
+    var mission = getStageMissionData(state);
+
+    state.currentStageMission = mission ? {
+      id: mission.id,
+      stage: state.stage,
+      progress: mission.type === "fail_on_life_lost" ? 0 : 0,
+      target: mission.target || 1,
+      completed: false,
+      failed: false,
+      rewarded: false,
+      startedAt: state.time.elapsed || 0
+    } : null;
+    state.stageMissionProgress = {};
+    if (mission) {
+      state.stageMissionProgress[mission.id] = state.currentStageMission;
+    }
+  }
+
+  function failStageMission(state, reason) {
+    var progress = state.currentStageMission;
+
+    if (!progress || progress.completed || progress.failed) {
+      return false;
+    }
+
+    progress.failed = true;
+    progress.failReason = reason || "조건 실패";
+    state.failedStageMissions[state.stage] = progress.id;
+    addFloatingText(state, getWidth(state) / 2, 128, "미션 실패", "#ff6b6b");
+    state.flags.needsHudUpdate = true;
+    return true;
+  }
+
+  function completeStageMission(state) {
+    var progress = state.currentStageMission;
+    var mission = progress && Data.STAGE_MISSIONS ? Data.STAGE_MISSIONS[progress.id] : null;
+
+    if (!progress || !mission || progress.completed || progress.failed) {
+      return false;
+    }
+
+    progress.completed = true;
+    progress.progress = progress.target;
+    addFloatingText(state, getWidth(state) / 2, 128, "미션 완료", "#f2c94c");
+    emitFeedback("mission", [18, 30, 18]);
+    state.flags.needsHudUpdate = true;
+    return true;
+  }
+
+  function recordMissionEvent(state, event, amount) {
+    var progress = state.currentStageMission;
+    var mission = progress && Data.STAGE_MISSIONS ? Data.STAGE_MISSIONS[progress.id] : null;
+
+    if (!progress || !mission || progress.completed || progress.failed || mission.event !== event) {
+      return false;
+    }
+
+    progress.progress = Math.min(progress.target, (progress.progress || 0) + Math.max(1, amount || 1));
+    if (progress.progress >= progress.target) {
+      completeStageMission(state);
+    }
+    state.flags.needsHudUpdate = true;
+    return true;
+  }
+
+  function finishStageMission(state) {
+    var progress = state.currentStageMission;
+    var mission = progress && Data.STAGE_MISSIONS ? Data.STAGE_MISSIONS[progress.id] : null;
+
+    if (!progress || !mission || progress.rewarded) {
+      return null;
+    }
+
+    if (!progress.failed && mission.type === "fail_on_life_lost") {
+      completeStageMission(state);
+    }
+    if (!progress.failed && mission.type === "time_limit") {
+      var elapsed = Math.max(0, (state.time.elapsed || 0) - (progress.startedAt || 0));
+      if (elapsed <= (mission.target || 90)) {
+        completeStageMission(state);
+      } else {
+        failStageMission(state, "시간 초과");
+      }
+    }
+
+    if (!progress.completed || progress.failed) {
+      state.failedStageMissions[state.stage] = progress.id;
+      return { id: progress.id, completed: false, text: "미션 실패" };
+    }
+
+    progress.rewarded = true;
+    state.completedStageMissions[state.stage] = progress.id;
+    state.runStats.missionCompleted = (state.runStats.missionCompleted || 0) + 1;
+    state.persistent.missions = state.persistent.missions || { completedMissionIds: {}, totalCompleted: 0, bestMissionCountInRun: 0 };
+    if (!state.persistent.missions.completedMissionIds[progress.id]) {
+      state.persistent.missions.completedMissionIds[progress.id] = true;
+    }
+    state.persistent.missions.totalCompleted = Math.max(0, state.persistent.missions.totalCompleted || 0) + 1;
+    state.persistent.missions.bestMissionCountInRun = Math.max(state.persistent.missions.bestMissionCountInRun || 0, state.runStats.missionCompleted || 0);
+
+    if (mission.reward && mission.reward.abyssStones) {
+      state.persistent.abyssStones = Math.max(0, state.persistent.abyssStones || 0) + mission.reward.abyssStones;
+      state.persistent.totalAbyssStonesEarned = Math.max(0, state.persistent.totalAbyssStonesEarned || 0) + mission.reward.abyssStones;
+    }
+    if (mission.reward && mission.reward.scoreBonus) {
+      awardScore(state, mission.reward.scoreBonus, getWidth(state) / 2, 106, 1);
+    }
+
+    state.persistent = State.savePersistent(state.persistent);
+    return { id: progress.id, completed: true, text: "미션 완료 + 심연석 " + (mission.reward.abyssStones || 0) };
+  }
+
   function isFocusedLensActive(state) {
     return hasRelic(state, "focused_lens") && activeBallCount(state) === 1;
   }
@@ -257,13 +391,16 @@
   }
 
   function getDropMultiplier(state) {
-    return (1 + getUpgradeLevel(state, "nature_drop") * 0.2) * (getClassData(state).itemDropMultiplier || 1);
+    var rules = getGameModeRules(state);
+    return (1 + getUpgradeLevel(state, "nature_drop") * 0.2) * (getClassData(state).itemDropMultiplier || 1) * (rules.itemDropMultiplier || 1);
   }
 
   function getDurationMultiplier(state) {
+    var rules = getGameModeRules(state);
     return (1 + getUpgradeLevel(state, "duration_boost") * 0.25) *
       (getClassData(state).itemDurationMultiplier || 1) *
-      (hasRelic(state, "alchemist_star") ? 1.15 : 1);
+      (hasRelic(state, "alchemist_star") ? 1.15 : 1) *
+      (rules.itemDurationMultiplier || 1);
   }
 
   function getDestroyExplosionChance(state) {
@@ -392,6 +529,9 @@
       brick.y = layout.top + brick.row * (layout.brickHeight + layout.gap);
       brick.width = layout.brickWidth;
       brick.height = layout.brickHeight;
+      if (brick.drift && !brick.drift.baseX) {
+        brick.drift.baseX = brick.x;
+      }
     });
   }
 
@@ -476,6 +616,19 @@
     var stage = getStageData(state);
     var rules = getGameModeRules(state);
     var typeId = Data.BRICK_SYMBOLS[symbol] || "normal";
+    var drifting = false;
+
+    if (spawnedByBoss && typeId === "wall") {
+      typeId = "strong";
+    }
+    if (!spawnedByBoss && rules.driftingBricks && typeId !== "wall") {
+      var driftLimit = rules.driftingBrickLimit || 8;
+      state.runModifiers.driftingCreated = state.runModifiers.driftingCreated || 0;
+      if (state.runModifiers.driftingCreated < driftLimit && (row + col) % 3 === 0) {
+        state.runModifiers.driftingCreated++;
+        drifting = true;
+      }
+    }
 
     if (rules.noItems && typeId === "item") {
       typeId = "strong";
@@ -486,6 +639,10 @@
 
     if (state.stage >= 6 && typeId === "strong") {
       hp += 1;
+    }
+
+    if (spawnedByBoss && type.destructible) {
+      hp = Math.min(hp, typeId === "shielded" ? 2 : 3);
     }
 
     if (stage.pattern && String(stage.pattern[row] || "").charAt(col) === "6") {
@@ -515,7 +672,14 @@
       shieldTimer: 0,
       rewardGranted: false,
       dropGranted: false,
-      spawnedByBoss: !!spawnedByBoss
+      spawnedByBoss: !!spawnedByBoss,
+      defenseTimeRemaining: spawnedByBoss ? 0 : null,
+      drift: drifting ? {
+        baseX: 0,
+        range: 10 + (col % 3) * 3,
+        speed: 0.8 + (row % 2) * 0.25,
+        phase: row + col
+      } : null
     };
   }
 
@@ -559,6 +723,15 @@
       phase: 0,
       rewardGranted: false,
       shieldActive: false,
+      weakTimer: 0,
+      weakPointSide: "left",
+      weakPointTimer: 0,
+      forcedWeakTimer: 0,
+      lastWeakHitTime: 0,
+      weakHitCount: 0,
+      bossMechanicProgress: 0,
+      lastBossDamageTime: state.time.elapsed || 0,
+      defenseBlocks: [],
       speedMultiplier: 1 + endlessScale * 0.06,
       spawnInterval: Math.max(2.4, bossData.spawnInterval * (1 - endlessScale * 0.04))
     };
@@ -652,9 +825,16 @@
     }
     runState.upgrades.pending = [];
     runState.upgrades.selectionLocked = false;
+    runState.stageStartedAt = runState.time.elapsed || 0;
+    runState.runModifiers.driftingCreated = 0;
     buildStage(runState);
     createBoss(runState);
     createStageGimmicks(runState);
+    startStageMission(runState);
+    discover("zones", runState.zoneId || "gate");
+    if (runState.boss) {
+      discover("bosses", runState.boss.id);
+    }
     resetBallToPaddle(runState);
     if (hasEvolution(runState, "abyss_rebirth")) {
       runState.activeEffects.bottomBarrierTimeRemaining = Math.max(runState.activeEffects.bottomBarrierTimeRemaining || 0, 8);
@@ -695,6 +875,13 @@
       upgradesSelected: 0,
       relicsSelected: 0
     };
+    runState.runStats.missionCompleted = 0;
+    runState.runStats.bestCombo = 0;
+    runState.runStats.laserBreaks = 0;
+    runState.runStats.weakHits = 0;
+    runState.runStats.precisionHits = 0;
+    runState.runStats.explosionChains = 0;
+    runState.runStats.bottomBarrierSaves = 0;
     runState.highestStageReached = Data.GAME.startingStage;
     runState.bossesDefeated = 0;
     runState.earnedAbyssStones = 0;
@@ -715,6 +902,13 @@
     };
     runState.evolutionStageFlags = {};
     runState.runModifiers = {};
+    runState.currentStageMission = null;
+    runState.stageMissionProgress = {};
+    runState.completedStageMissions = {};
+    runState.failedStageMissions = {};
+    runState.runSummary = null;
+    runState.selectedBallSkinId = runState.persistent.cosmetics ? runState.persistent.cosmetics.selectedBallSkinId : "default_ball";
+    runState.selectedPaddleSkinId = runState.persistent.cosmetics ? runState.persistent.cosmetics.selectedPaddleSkinId : "default_paddle";
     if (rules.daily) {
       var dateKey = getLocalDateKey();
       var seed = hashSeed(dateKey + ":" + runState.selectedClassId);
@@ -752,6 +946,10 @@
 
     if (!isFiniteNumber(x)) {
       return;
+    }
+
+    if (getGameModeRules(runState).reverseControls) {
+      x = getWidth(runState) - x;
     }
 
     runState.paddle.targetX = clamp(x, runState.paddle.width / 2, getWidth(runState) - runState.paddle.width / 2);
@@ -941,6 +1139,8 @@
       if (state.activeEffects.bottomBarrierDurability <= 0) {
         state.activeEffects.bottomBarrierTimeRemaining = 0;
       }
+      state.runStats.bottomBarrierSaves = (state.runStats.bottomBarrierSaves || 0) + 1;
+      recordMissionEvent(state, "bottom_barrier_save", 1);
       addLineEffect(state, 12, getHeight(state) - 8, getWidth(state) - 12, getHeight(state) - 8, "#9ee6a8");
     }
 
@@ -1003,7 +1203,9 @@
       if (hasRelic(state, "mirror_shard") && state.balls.length < getMaxBalls(state) && random(state) < 0.35) {
         splitBalls(state, 1);
       }
-      addFloatingText(state, ball.x, paddle.y - 18, "Precision", "#f2c94c");
+      state.runStats.precisionHits = (state.runStats.precisionHits || 0) + 1;
+      recordMissionEvent(state, "precision_hit", 1);
+      addFloatingText(state, ball.x, paddle.y - 18, "정밀", "#f2c94c");
     }
     addParticles(state, ball.x, ball.y + ball.radius, "#f3f7ff", 5);
   }
@@ -1040,6 +1242,9 @@
       state.evolutionCounters.bumperDamageStacks = clamp((state.evolutionCounters.bumperDamageStacks || 0) + 1, 0, 3);
       addFloatingText(state, cx, cy - radius, "Bumper +" + state.evolutionCounters.bumperDamageStacks, "#65c8ff");
     }
+    if (gimmick.type === "bumper" || gimmick.type === "spinner") {
+      recordMissionEvent(state, "bumper_hit", 1);
+    }
     addRingEffect(state, cx, cy, radius + 6, gimmick.type === "spinner" ? "#f2c94c" : "#65c8ff");
     return true;
   }
@@ -1055,6 +1260,7 @@
     ball.y = gimmick.exitY;
     ball.prevX = ball.x;
     ball.prevY = ball.y;
+    state.runModifiers.portalPrimedForMission = 3;
     if (hasRelic(state, "portal_resonator")) {
       state.evolutionCounters = state.evolutionCounters || {};
       state.evolutionCounters.portalPrimed = Math.max(state.evolutionCounters.portalPrimed || 0, hasEvolution(state, "dimensional_refraction") ? 2 : 1);
@@ -1083,6 +1289,7 @@
     reflect(ball, collision.nx, collision.ny);
     separateBall(ball, rect, collision);
     normalizeBallVelocity(state, ball);
+    recordMissionEvent(state, "precision_hit", 1);
     addLineEffect(state, rect.x, rect.y + rect.height / 2, rect.x + rect.width, rect.y + rect.height / 2, "#d8e7ff");
     return true;
   }
@@ -1164,6 +1371,7 @@
     }
 
     var definition = weightedItem(state);
+    discover("items", definition.id);
 
     state.items.push({
       id: state.counters.nextItemId++,
@@ -1252,6 +1460,18 @@
     if (!brick.rewardGranted) {
       brick.rewardGranted = true;
       state.runStats.bricksDestroyed = (state.runStats.bricksDestroyed || 0) + 1;
+      if (source === "laser") {
+        state.runStats.laserBreaks = (state.runStats.laserBreaks || 0) + 1;
+        recordMissionEvent(state, "laser_break", 1);
+      }
+      if (source === "explosion" || source === "laserSplash") {
+        state.runStats.explosionChains = (state.runStats.explosionChains || 0) + 1;
+        recordMissionEvent(state, "explosion_chain", 1);
+      }
+      if ((state.runModifiers.portalPrimedForMission || 0) > 0) {
+        state.runModifiers.portalPrimedForMission -= 1;
+        recordMissionEvent(state, "portal_break", 1);
+      }
       triggerAchievement(state, "first_brick");
       awardScore(state, brick.score, brick.x + brick.width / 2, brick.y + brick.height / 2);
     }
@@ -1364,6 +1584,33 @@
     applyDamageToBoss(state, getBrickDamage(state), ball.x, ball.y);
   }
 
+  function isBossWeakHit(state, x) {
+    var boss = state.boss;
+
+    if (!boss || !boss.alive) {
+      return false;
+    }
+
+    if ((boss.weakTimer || 0) > 0 || (boss.forcedWeakTimer || 0) > 0) {
+      return true;
+    }
+    if (boss.id === "sentinel") {
+      var center = boss.x + boss.width / 2;
+      return boss.weakPointSide === "left" ? x <= center : x >= center;
+    }
+    if (boss.id === "gatekeeper") {
+      return (state.runModifiers.portalPrimedForMission || 0) > 0;
+    }
+    if (boss.id === "mirror_lord") {
+      return (state.evolutionCounters && (state.evolutionCounters.precisionPrimed || 0) > 0);
+    }
+    if (boss.id === "core") {
+      return countBossSpawnedBricks(state) === 0 || (boss.weakTimer || 0) > 0;
+    }
+
+    return false;
+  }
+
   function applyDamageToBoss(state, amount, x, y, extraMultiplier) {
     var boss = state.boss;
 
@@ -1374,17 +1621,31 @@
     var bossData = getBossData(boss.id);
     var reduction = boss.shieldActive ? bossData.damageReduction : 0;
     var damageMultiplier = (1 + getMetaLevel(state, "bossDamage") * 0.05) * (hasRelic(state, "boss_breaker") ? 1.5 : 1);
-    var damage = Math.max(1, Math.floor(amount * damageMultiplier * (1 - reduction) * (extraMultiplier || 1)));
+    var weakHit = isBossWeakHit(state, x);
+    var sourceMultiplier = typeof extraMultiplier === "number" && isFinite(extraMultiplier) ? extraMultiplier : 1;
+    var damage = Math.max(1, Math.floor(amount * damageMultiplier * (weakHit ? 1.75 : 1) * (1 - reduction) * sourceMultiplier));
 
     boss.hp = Math.max(0, boss.hp - damage);
-    addFloatingText(state, x, y, "-" + damage, boss.shieldActive ? "#65c8ff" : "#ffffff");
-    addParticles(state, x, y, boss.shieldActive ? "#65c8ff" : "#e65f4b", 8);
+    boss.lastBossDamageTime = state.time.elapsed || 0;
+    if (weakHit) {
+      boss.weakHitCount = (boss.weakHitCount || 0) + 1;
+      boss.lastWeakHitTime = state.time.elapsed || 0;
+      state.runStats.weakHits = (state.runStats.weakHits || 0) + 1;
+      recordMissionEvent(state, "boss_weak_hit", 1);
+    }
+    addFloatingText(state, x, y, (weakHit ? "약점 -" : "-") + damage, weakHit ? "#f2c94c" : (boss.shieldActive ? "#65c8ff" : "#ffffff"));
+    addParticles(state, x, y, weakHit ? "#f2c94c" : (boss.shieldActive ? "#65c8ff" : "#e65f4b"), weakHit ? 12 : 8);
 
     if (boss.hp > 0) {
       return false;
     }
 
     boss.alive = false;
+    state.bricks.forEach(function (brick) {
+      if (brick.spawnedByBoss) {
+        brick.alive = false;
+      }
+    });
 
     if (!boss.rewardGranted) {
       boss.rewardGranted = true;
@@ -1499,6 +1760,11 @@
 
     if (!item.virtual) {
       state.runStats.itemsCollected = (state.runStats.itemsCollected || 0) + 1;
+      state.runStats.itemCounts = state.runStats.itemCounts || {};
+      state.runStats.itemCounts[item.type] = (state.runStats.itemCounts[item.type] || 0) + 1;
+      discover("items", item.type);
+      recordMissionEvent(state, "item_collected", 1);
+      emitFeedback("item", 10);
     }
     if (state.evolutionCounters && !item.virtual) {
       state.evolutionCounters.itemsCollected = (state.evolutionCounters.itemsCollected || 0) + 1;
@@ -1690,6 +1956,14 @@
     });
 
     state.bricks.forEach(function (brick) {
+      if (brick.spawnedByBoss && brick.defenseTimeRemaining > 0) {
+        brick.defenseTimeRemaining = Math.max(0, brick.defenseTimeRemaining - dt);
+        if (brick.defenseTimeRemaining === 0) {
+          brick.alive = false;
+          return;
+        }
+      }
+
       var type = Data.BRICK_TYPES[brick.type];
       if (!brick.alive || brick.type !== "shielded" || !type) {
         return;
@@ -1746,6 +2020,16 @@
     }).length;
   }
 
+  function getBossDefenseLimit(bossData, hpRatio) {
+    var base = bossData.maxDefenseBlocks || bossData.maxSpawnedBricks || 4;
+
+    if (hpRatio <= (bossData.phaseDefenseRelaxAtHpRatio || 0.3)) {
+      return Math.max(2, Math.floor(base * 0.5));
+    }
+
+    return base;
+  }
+
   function spawnBossBricks(state, count) {
     var boss = state.boss;
     var bossData = boss ? getBossData(boss.id) : null;
@@ -1754,6 +2038,8 @@
       return;
     }
 
+    var hpRatio = boss.hp / Math.max(1, boss.maxHp);
+    var defenseLimit = getBossDefenseLimit(bossData, hpRatio);
     var layout = getBrickLayout(state);
     var existing = {};
 
@@ -1763,22 +2049,29 @@
       }
     });
 
-    for (var i = 0; i < count && countBossSpawnedBricks(state) < bossData.maxSpawnedBricks; i++) {
-      var row = 0;
+    for (var i = 0; i < count && countBossSpawnedBricks(state) < defenseLimit; i++) {
+      var row = random(state) < 0.72 ? 0 : 1;
+      var centerCol = Math.floor(layout.columns / 2);
       var col = Math.floor(random(state) * layout.columns);
       var attempts = 0;
 
-      while (existing[row + ":" + col] && attempts < layout.columns * 3) {
+      while ((existing[row + ":" + col] || col === centerCol) && attempts < layout.columns * 4) {
         col = (col + 1) % layout.columns;
         attempts++;
       }
 
-      if (existing[row + ":" + col]) {
+      if (existing[row + ":" + col] || col === centerCol) {
         continue;
       }
 
-      var symbol = boss.id === "core" ? (random(state) < 0.45 ? "3" : "2") : (random(state) < 0.3 ? "2" : "1");
+      var roll = random(state);
+      var symbol = roll < 0.18 && hpRatio > (bossData.phaseDefenseRelaxAtHpRatio || 0.3) ? "6" : roll < 0.62 ? "2" : "1";
       var brick = createBrick(state, row, col, symbol, true);
+      brick.defenseTimeRemaining = bossData.defenseBlockLifetime || 8;
+      if (brick.type === "shielded") {
+        brick.shieldActive = false;
+        brick.shieldTimer = (Data.BRICK_TYPES.shielded.shieldDuration || 2.2) + 0.1;
+      }
       existing[row + ":" + col] = true;
       state.bricks.push(brick);
     }
@@ -1797,6 +2090,22 @@
     var hpRatio = boss.hp / Math.max(1, boss.maxHp);
     var nextPhase = hpRatio <= 0.33 ? 2 : hpRatio <= 0.66 ? 1 : 0;
     var speed = (hpRatio <= 0.5 ? bossData.enragedMoveSpeed : bossData.moveSpeed) * (boss.speedMultiplier || 1);
+    var defenseLimit = getBossDefenseLimit(bossData, hpRatio);
+
+    boss.weakPointTimer = Math.max(0, (boss.weakPointTimer || 0) - dt);
+    boss.forcedWeakTimer = Math.max(0, (boss.forcedWeakTimer || 0) - dt);
+    if (boss.weakPointTimer === 0) {
+      boss.weakPointSide = boss.weakPointSide === "left" ? "right" : "left";
+      boss.weakPointTimer = boss.id === "sentinel" ? 3.2 : 4.2;
+    }
+
+    if (countBossSpawnedBricks(state) > defenseLimit) {
+      state.bricks
+        .filter(function (brick) { return brick.alive && brick.spawnedByBoss; })
+        .sort(function (a, b) { return (a.defenseTimeRemaining || 0) - (b.defenseTimeRemaining || 0); })
+        .slice(0, countBossSpawnedBricks(state) - defenseLimit)
+        .forEach(function (brick) { brick.alive = false; });
+    }
 
     if (nextPhase > (boss.phase || 0)) {
       boss.phase = nextPhase;
@@ -1822,9 +2131,20 @@
       state.bossTimers.spawn = boss.spawnInterval || bossData.spawnInterval;
     }
 
+    if ((state.time.elapsed || 0) - (boss.lastBossDamageTime || 0) >= (bossData.noDamageLimit || 8)) {
+      boss.weakTimer = Math.max(boss.weakTimer || 0, bossData.forcedWeakTime || 3);
+      boss.forcedWeakTimer = Math.max(boss.forcedWeakTimer || 0, bossData.forcedWeakTime || 3);
+      boss.lastBossDamageTime = state.time.elapsed || 0;
+      addFloatingText(state, boss.x + boss.width / 2, boss.y + boss.height + 18, "약점 노출", "#f2c94c");
+    }
+
+    if (boss.weakTimer > 0) {
+      boss.weakTimer = Math.max(0, boss.weakTimer - dt);
+    }
+
     if (bossData.shieldCycle) {
       state.bossTimers.shield = (state.bossTimers.shield + dt) % bossData.shieldCycle;
-      boss.shieldActive = state.bossTimers.shield <= bossData.shieldDuration;
+      boss.shieldActive = boss.weakTimer > 0 ? false : state.bossTimers.shield <= bossData.shieldDuration;
     }
   }
 
@@ -1849,9 +2169,22 @@
       }
       boss.shieldActive = true;
       state.bossTimers.shield = 0;
+    } else if (boss.id === "gatekeeper") {
+      if (phase === 1) {
+        spawnBossBricks(state, 1);
+        addBossGimmick(state, { type: "portal", pairId: "core", entry: { xRatio: 0.16, yRatio: 0.52 }, exit: { xRatio: 0.84, yRatio: 0.36 }, radius: 14 });
+      } else if (phase === 2) {
+        addBossGimmick(state, { type: "spinner", xRatio: 0.5, yRatio: 0.5, radius: 18, angleSpeed: 1.5 });
+      }
+    } else if (boss.id === "mirror_lord") {
+      if (phase === 1) {
+        addBossGimmick(state, { type: "portal", pairId: "mirror", entry: { xRatio: 0.18, yRatio: 0.5 }, exit: { xRatio: 0.82, yRatio: 0.36 }, radius: 14 });
+      } else if (phase === 2) {
+        addBossGimmick(state, { type: "movingMirror", axis: "x", xRatio: 0.5, yRatio: 0.62, widthRatio: 0.28, height: 8, minRatio: 0.18, maxRatio: 0.82, moveSpeed: 70 });
+      }
     } else if (boss.id === "core") {
       if (phase === 1) {
-        spawnBossBricks(state, 2);
+        spawnBossBricks(state, 1);
         addBossGimmick(state, { type: "portal", pairId: "core", entry: { xRatio: 0.16, yRatio: 0.52 }, exit: { xRatio: 0.84, yRatio: 0.36 }, radius: 14 });
       } else if (phase === 2) {
         addBossGimmick(state, { type: "spinner", xRatio: 0.5, yRatio: 0.5, radius: 18, angleSpeed: 1.5 });
@@ -1867,8 +2200,28 @@
     });
   }
 
+  function updateDriftingBricks(state) {
+    if (!getGameModeRules(state).driftingBricks) {
+      return;
+    }
+
+    state.bricks.forEach(function (brick) {
+      if (!brick.alive || !brick.drift) {
+        return;
+      }
+      brick.x = clamp(
+        brick.drift.baseX + Math.sin((state.time.elapsed || 0) * brick.drift.speed + brick.drift.phase) * brick.drift.range,
+        6,
+        getWidth(state) - brick.width - 6
+      );
+    });
+  }
+
   function shouldStageClear(state) {
     var bossAlive = state.boss && state.boss.alive;
+    if (state.boss) {
+      return !bossAlive;
+    }
     return !bossAlive && !hasLivingDestructibleBrick(state);
   }
 
@@ -1901,6 +2254,9 @@
     save.records.totalItemsCollected += state.runStats.itemsCollected || 0;
     save.records.totalBossesDefeated += state.runStats.bossesDefeated || 0;
     save.records.maxActiveBalls = Math.max(save.records.maxActiveBalls || 1, state.runStats.maxActiveBalls || 1);
+    if (save.missions) {
+      save.missions.bestMissionCountInRun = Math.max(save.missions.bestMissionCountInRun || 0, state.runStats.missionCompleted || 0);
+    }
 
     if (save.records.classes[classId]) {
       save.records.classes[classId].bestScore = Math.max(save.records.classes[classId].bestScore || 0, state.score);
@@ -2029,6 +2385,66 @@
     return gained;
   }
 
+  function buildRunSummary(state, runClear, reward) {
+    var mostItem = "-";
+    var itemCounts = state.runStats.itemCounts || {};
+
+    Object.keys(itemCounts).forEach(function (id) {
+      if (mostItem === "-" || itemCounts[id] > itemCounts[mostItem]) {
+        mostItem = id;
+      }
+    });
+
+    return {
+      modeId: state.gameModeId,
+      modeName: getGameModeData(state).name,
+      classId: state.selectedClassId,
+      className: getClassData(state).name,
+      reachedStage: state.highestStageReached || state.stage || 1,
+      score: state.score || 0,
+      earnedAbyssStones: reward || 0,
+      completedMissions: state.runStats.missionCompleted || 0,
+      selectedRelics: (state.selectedRelicIds || []).slice(),
+      activeEvolutions: Object.keys(state.activeEvolutions || {}),
+      mostCollectedItem: mostItem,
+      bricksDestroyed: state.runStats.bricksDestroyed || 0,
+      bossesDefeated: state.runStats.bossesDefeated || 0,
+      livesLost: state.runStats.livesLost || 0,
+      maxActiveBalls: state.runStats.maxActiveBalls || 1,
+      runElapsedTime: state.runElapsedTime || 0,
+      runClear: !!runClear,
+      bestScoreUpdated: state.score >= (state.persistent.bestScore || 0),
+      bestStageUpdated: (state.highestStageReached || 1) >= (state.persistent.highestStage || 1)
+    };
+  }
+
+  function unlockCosmeticRewards(state, runClear) {
+    if (!runClear || !State.unlockCosmetic) {
+      return;
+    }
+
+    if (state.gameModeId === "standard") {
+      State.unlockCosmetic("ball", "abyss_ball");
+      State.unlockCosmetic("paddle", "abyss_paddle");
+      if (state.selectedClassId === "guardian") {
+        State.unlockCosmetic("paddle", "guardian_paddle");
+      } else if (state.selectedClassId === "destroyer") {
+        State.unlockCosmetic("paddle", "destroyer_paddle");
+      } else if (state.selectedClassId === "alchemist") {
+        State.unlockCosmetic("paddle", "alchemy_paddle");
+      } else if (state.selectedClassId === "tuner") {
+        State.unlockCosmetic("paddle", "tuner_paddle");
+      }
+    }
+    if (state.activeEvolutions && state.activeEvolutions.split_storm) {
+      State.unlockCosmetic("ball", "split_orb");
+    }
+    if ((state.runStats.precisionHits || 0) >= 30) {
+      State.unlockCosmetic("ball", "precision_orb");
+    }
+    state.persistent = State.getRunState().persistent;
+  }
+
   function grantRunReward(state, runClear) {
     if (state.flags.runRewardGranted) {
       return state.earnedAbyssStones || 0;
@@ -2037,6 +2453,7 @@
     var reward = calculateAbyssReward(state, !!runClear);
     var dailyReward = grantDailyRewards(state, !!runClear);
     reward += dailyReward;
+    state.runSummary = buildRunSummary(state, !!runClear, reward);
 
     state.flags.runRewardGranted = true;
     state.earnedAbyssStones = reward;
@@ -2051,6 +2468,7 @@
       state.persistent.totalAbyssStonesEarned = Math.max(0, Math.floor(state.persistent.totalAbyssStonesEarned || 0)) + reward;
     }
 
+    unlockCosmeticRewards(state, !!runClear);
     state.persistent = State.savePersistent(state.persistent);
     updateRecords(state, !!runClear);
     checkRunAchievements(state, !!runClear);
@@ -2107,6 +2525,7 @@
       ball.attached = false;
     });
     awardScore(state, Data.SCORE.stageClear, getWidth(state) / 2, 80);
+    state.lastMissionResult = finishStageMission(state);
     State.updateHighestStage(state.stage);
 
     if (!getGameModeRules(state).endless && state.stage >= (getGameModeRules(state).finalStage || Data.GAME.finalStage)) {
@@ -2120,7 +2539,8 @@
 
     var rules = getGameModeRules(state);
     var relicLimit = rules.relicLimit || 1;
-    var shouldOfferRelic = (state.stage === 5 || (rules.endless && state.stage % Math.max(1, rules.bossEvery || 5) === 0)) &&
+    var stageData = getStageData(state);
+    var shouldOfferRelic = (stageData.type === "boss" || (rules.endless && state.stage % Math.max(1, rules.bossEvery || 5) === 0)) &&
       (state.selectedRelicIds || []).length < relicLimit;
 
     if (shouldOfferRelic) {
@@ -2145,7 +2565,7 @@
     });
     awardScore(state, Data.SCORE.runClear, getWidth(state) / 2, 92);
     State.updateBestScore(state.score);
-    State.updateHighestStage(Data.GAME.finalStage);
+    State.updateHighestStage(getGameModeRules(state).finalStage || Data.GAME.finalStage);
     grantRunReward(state, true);
     State.setMode(Data.MODES.RUN_CLEAR);
     state.flags.needsHudUpdate = true;
@@ -2161,6 +2581,8 @@
     if (state.flags.lifeLostHandled || state.flags.stageClearHandled || state.mode !== Data.MODES.PLAYING) {
       return;
     }
+
+    failStageMission(state, "생명 손실");
 
     if ((hasRelic(state, "guardian_field") || hasEvolution(state, "aegis_guard")) && !state.stageRelicFlags.guardianSaved) {
       state.stageRelicFlags.guardianSaved = true;
@@ -2369,6 +2791,8 @@
 
       state.activeEvolutions = state.activeEvolutions || {};
       state.activeEvolutions[evolution.id] = true;
+      discover("evolutions", evolution.id);
+      emitFeedback("evolution", [16, 28, 16, 28]);
       activated.push(evolution.name);
       addFloatingText(state, getWidth(state) / 2, 132 + activated.length * 18, "능력 진화: " + evolution.name, "#f2c94c");
     });
@@ -2458,6 +2882,13 @@
     runState.evolutionCounters.precisionScore = runState.evolutionCounters.precisionScore || 1;
     runState.evolutionCounters.portalScore = runState.evolutionCounters.portalScore || 1;
     runState.runModifiers = JSON.parse(JSON.stringify(checkpoint.runModifiers || {}));
+    runState.currentStageMission = JSON.parse(JSON.stringify(checkpoint.currentStageMission || null));
+    runState.stageMissionProgress = JSON.parse(JSON.stringify(checkpoint.stageMissionProgress || {}));
+    runState.completedStageMissions = JSON.parse(JSON.stringify(checkpoint.completedStageMissions || {}));
+    runState.failedStageMissions = JSON.parse(JSON.stringify(checkpoint.failedStageMissions || {}));
+    runState.runSummary = JSON.parse(JSON.stringify(checkpoint.runSummary || null));
+    runState.selectedBallSkinId = checkpoint.selectedBallSkinId || (runState.persistent.cosmetics && runState.persistent.cosmetics.selectedBallSkinId) || "default_ball";
+    runState.selectedPaddleSkinId = checkpoint.selectedPaddleSkinId || (runState.persistent.cosmetics && runState.persistent.cosmetics.selectedPaddleSkinId) || "default_paddle";
     runState.rng = checkpoint.rng ? JSON.parse(JSON.stringify(checkpoint.rng)) : null;
     runState.zoneId = checkpoint.zoneId || null;
     runState.relicCounters = JSON.parse(JSON.stringify(checkpoint.relicCounters || { bricksDestroyed: 0 }));
@@ -2511,6 +2942,7 @@
 
     runState.selectedRelicIds = runState.selectedRelicIds || [];
     runState.selectedRelicIds.push(relicId);
+    discover("relics", relicId);
     runState.selectedRelicId = runState.selectedRelicIds[0] || relicId;
     runState.runStats.relicsSelected = (runState.runStats.relicsSelected || 0) + 1;
     runState.relicChoices = [];
@@ -2558,7 +2990,8 @@
 
     runState.upgrades.selectionLocked = true;
     runState.upgrades.levels[upgradeId] = getUpgradeLevel(runState, upgradeId) + 1;
-    runState.upgrades.chosen.push(upgrade.name + " Lv." + runState.upgrades.levels[upgradeId]);
+    discover("upgrades", upgradeId);
+    runState.upgrades.chosen.push(upgrade.name + " 레벨 " + runState.upgrades.levels[upgradeId]);
     runState.upgrades.pending = [];
     runState.runStats.upgradesSelected = (runState.runStats.upgradesSelected || 0) + 1;
     applyUpgradeEffect(runState, upgrade);
@@ -2616,6 +3049,7 @@
     if (runState.mode === Data.MODES.PLAYING) {
       updateTimers(runState, delta);
       updateGimmicks(runState, delta);
+      updateDriftingBricks(runState);
       updateItems(runState, delta);
       updateBoss(runState, delta);
       updateRunMaxBalls(runState);
