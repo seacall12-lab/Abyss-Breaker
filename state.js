@@ -153,6 +153,32 @@
     return result;
   }
 
+  function syncClassUnlocks(save) {
+    var target = isObject(save) ? save : {};
+    var defaults = Data.STORAGE_DEFAULTS;
+    var sourceUnlockedClasses = isObject(target.unlockedClasses) ? target.unlockedClasses : {};
+    var unlockedClasses = {};
+    var unlocks = isObject(target.unlocks) ? target.unlocks : createUnlockDefaults(defaults);
+    var sourceUnlockClasses = isObject(unlocks.classes) ? unlocks.classes : {};
+
+    unlocks.classes = {};
+
+    Object.keys(Data.CLASSES).forEach(function (classId) {
+      var unlocked = classId === "balanced" || !!sourceUnlockedClasses[classId] || !!sourceUnlockClasses[classId];
+      unlockedClasses[classId] = unlocked;
+      unlocks.classes[classId] = unlocked;
+    });
+
+    target.unlockedClasses = unlockedClasses;
+    target.unlocks = unlocks;
+
+    if (!Data.CLASSES[target.selectedClassId] || !unlockedClasses[target.selectedClassId]) {
+      target.selectedClassId = "balanced";
+    }
+
+    return target;
+  }
+
   function sanitizeTutorial(value, defaults) {
     return {
       completed: isObject(value) && typeof value.completed === "boolean" ? value.completed : !!defaults.tutorial.completed,
@@ -246,10 +272,102 @@
   }
 
   function sanitizeSettings(value, defaults) {
+    var sound = isObject(value) && typeof value.sound === "boolean" ? value.sound : defaults.settings.sound;
+    var vibration = isObject(value) && typeof value.vibration === "boolean" ? value.vibration : defaults.settings.vibration;
+    if (isObject(value) && typeof value.soundEnabled === "boolean") {
+      sound = value.soundEnabled;
+    }
+    if (isObject(value) && typeof value.vibrationEnabled === "boolean") {
+      vibration = value.vibrationEnabled;
+    }
+
     return {
-      sound: isObject(value) && typeof value.sound === "boolean" ? value.sound : defaults.settings.sound,
-      vibration: isObject(value) && typeof value.vibration === "boolean" ? value.vibration : defaults.settings.vibration,
+      sound: sound,
+      vibration: vibration,
+      soundEnabled: sound,
+      vibrationEnabled: vibration,
       reducedEffects: isObject(value) && typeof value.reducedEffects === "boolean" ? value.reducedEffects : defaults.settings.reducedEffects
+    };
+  }
+
+  function sanitizeBooleanMap(value, ids, forceIds) {
+    var result = {};
+    var forced = forceIds || [];
+
+    ids.forEach(function (id) {
+      result[id] = isObject(value) && typeof value[id] === "boolean" ? value[id] : false;
+    });
+    forced.forEach(function (id) {
+      result[id] = true;
+    });
+    return result;
+  }
+
+  function sanitizeMissions(value, defaults) {
+    var completed = {};
+    var total = 0;
+
+    Object.keys(Data.STAGE_MISSIONS || {}).forEach(function (id) {
+      completed[id] = !!(isObject(value) && isObject(value.completedMissionIds) && value.completedMissionIds[id]);
+      if (completed[id]) {
+        total++;
+      }
+    });
+
+    return {
+      completedMissionIds: completed,
+      totalCompleted: Math.max(total, nonNegativeInt(isObject(value) ? value.totalCompleted : undefined, defaults.missions.totalCompleted)),
+      bestMissionCountInRun: nonNegativeInt(isObject(value) ? value.bestMissionCountInRun : undefined, defaults.missions.bestMissionCountInRun)
+    };
+  }
+
+  function sanitizeDiscovered(value, defaults) {
+    var discovered = clone(defaults.discovered || {});
+
+    Object.keys(discovered).forEach(function (group) {
+      discovered[group] = isObject(value) && isObject(value[group]) ? clone(value[group]) : clone(discovered[group]);
+    });
+
+    discovered.upgrades = discovered.upgrades || {};
+    discovered.relics = discovered.relics || {};
+    discovered.evolutions = discovered.evolutions || {};
+    discovered.items = discovered.items || {};
+    discovered.bosses = discovered.bosses || {};
+    discovered.zones = discovered.zones || {};
+
+    Data.UPGRADES.forEach(function (upgrade) { discovered.upgrades[upgrade.id] = !!discovered.upgrades[upgrade.id]; });
+    Data.RELICS.forEach(function (relic) { discovered.relics[relic.id] = !!discovered.relics[relic.id]; });
+    Data.EVOLUTIONS.forEach(function (evolution) { discovered.evolutions[evolution.id] = !!discovered.evolutions[evolution.id]; });
+    Data.ITEMS.definitions.forEach(function (item) { discovered.items[item.id] = !!discovered.items[item.id]; });
+    Object.keys(Data.BOSSES).forEach(function (id) { discovered.bosses[id] = !!discovered.bosses[id]; });
+    Object.keys(Data.ZONES).forEach(function (id) { discovered.zones[id] = !!discovered.zones[id]; });
+
+    Data.UPGRADES.slice(0, 3).forEach(function (upgrade) { discovered.upgrades[upgrade.id] = true; });
+    Data.ITEMS.definitions.forEach(function (item) { discovered.items[item.id] = true; });
+    discovered.zones.gate = true;
+    return discovered;
+  }
+
+  function sanitizeCosmetics(value, defaults) {
+    var ballIds = Object.keys(Data.COSMETICS.ballSkins || {});
+    var paddleIds = Object.keys(Data.COSMETICS.paddleSkins || {});
+    var ballSkins = sanitizeBooleanMap(isObject(value) ? value.unlockedBallSkins : null, ballIds, ["default_ball"]);
+    var paddleSkins = sanitizeBooleanMap(isObject(value) ? value.unlockedPaddleSkins : null, paddleIds, ["default_paddle"]);
+    var selectedBall = isObject(value) && Data.COSMETICS.ballSkins[value.selectedBallSkinId] ? value.selectedBallSkinId : defaults.cosmetics.selectedBallSkinId;
+    var selectedPaddle = isObject(value) && Data.COSMETICS.paddleSkins[value.selectedPaddleSkinId] ? value.selectedPaddleSkinId : defaults.cosmetics.selectedPaddleSkinId;
+
+    if (!ballSkins[selectedBall]) {
+      selectedBall = "default_ball";
+    }
+    if (!paddleSkins[selectedPaddle]) {
+      selectedPaddle = "default_paddle";
+    }
+
+    return {
+      unlockedBallSkins: ballSkins,
+      unlockedPaddleSkins: paddleSkins,
+      selectedBallSkinId: selectedBall,
+      selectedPaddleSkinId: selectedPaddle
     };
   }
 
@@ -430,6 +548,13 @@
       zoneId: typeof value.zoneId === "string" && Data.ZONES && Data.ZONES[value.zoneId] ? value.zoneId : null,
       relicCounters: sanitizeRelicCounters(value.relicCounters),
       runStats: sanitizeRunStats(value.runStats),
+      currentStageMission: isObject(value.currentStageMission) ? clone(value.currentStageMission) : null,
+      stageMissionProgress: isObject(value.stageMissionProgress) ? clone(value.stageMissionProgress) : {},
+      completedStageMissions: isObject(value.completedStageMissions) ? clone(value.completedStageMissions) : {},
+      failedStageMissions: isObject(value.failedStageMissions) ? clone(value.failedStageMissions) : {},
+      runSummary: isObject(value.runSummary) ? clone(value.runSummary) : null,
+      selectedBallSkinId: save.cosmetics ? save.cosmetics.selectedBallSkinId : "default_ball",
+      selectedPaddleSkinId: save.cosmetics ? save.cosmetics.selectedPaddleSkinId : "default_paddle",
       highestStageReached: Math.max(stage, positiveInt(value.highestStageReached, stage)),
       bossesDefeated: nonNegativeInt(value.bossesDefeated, 0),
       runElapsedTime: nonNegativeNumber(value.runElapsedTime, 0)
@@ -463,6 +588,10 @@
       }
     });
 
+    var classSync = syncClassUnlocks({ unlockedClasses: unlockedClasses, unlocks: unlocks, selectedClassId: value.selectedClassId });
+    unlockedClasses = classSync.unlockedClasses;
+    unlocks = classSync.unlocks;
+
     var selectedClassId = typeof value.selectedClassId === "string" && Data.CLASSES[value.selectedClassId] ? value.selectedClassId : defaults.selectedClassId;
     var selectedGameModeId = typeof value.selectedGameModeId === "string" && Data.GAME_MODES[value.selectedGameModeId] ? value.selectedGameModeId : defaults.selectedGameModeId;
 
@@ -490,6 +619,9 @@
       metaUpgrades: sanitizeMetaUpgrades(value.metaUpgrades, defaults),
       achievements: sanitizeAchievements(value.achievements),
       records: sanitizeRecords(value.records, defaults.records, legacy),
+      missions: sanitizeMissions(value.missions, defaults),
+      discovered: sanitizeDiscovered(value.discovered, defaults),
+      cosmetics: sanitizeCosmetics(value.cosmetics, defaults),
       settings: sanitizeSettings(value.settings, defaults),
       tutorial: sanitizeTutorial(value.tutorial, defaults),
       dailyChallenge: sanitizeDailyChallenge(value.dailyChallenge),
@@ -514,6 +646,7 @@
       var fromCurrentKey = !!raw;
 
       raw = raw ||
+        storage.getItem("abyssBreaker.save.v5") ||
         storage.getItem("abyssBreaker.save.v4") ||
         storage.getItem("abyssBreaker.save.v3") ||
         storage.getItem("abyssBreaker.save.v2") ||
@@ -630,7 +763,14 @@
         maxActiveBalls: 1,
         livesLost: 0,
         upgradesSelected: 0,
-        relicsSelected: 0
+        relicsSelected: 0,
+        missionCompleted: 0,
+        bestCombo: 0,
+        laserBreaks: 0,
+        weakHits: 0,
+        precisionHits: 0,
+        explosionChains: 0,
+        bottomBarrierSaves: 0
       },
       highestStageReached: Data.GAME.startingStage,
       bossesDefeated: 0,
@@ -656,6 +796,13 @@
       },
       evolutionStageFlags: {},
       runModifiers: {},
+      currentStageMission: null,
+      stageMissionProgress: {},
+      completedStageMissions: {},
+      failedStageMissions: {},
+      runSummary: null,
+      selectedBallSkinId: persistent.cosmetics ? persistent.cosmetics.selectedBallSkinId : "default_ball",
+      selectedPaddleSkinId: persistent.cosmetics ? persistent.cosmetics.selectedPaddleSkinId : "default_paddle",
       rng: null,
       tutorial: {
         active: false,
@@ -821,6 +968,13 @@
       zoneId: state.zoneId || null,
       relicCounters: clone(state.relicCounters || {}),
       runStats: clone(state.runStats || {}),
+      currentStageMission: clone(state.currentStageMission || null),
+      stageMissionProgress: clone(state.stageMissionProgress || {}),
+      completedStageMissions: clone(state.completedStageMissions || {}),
+      failedStageMissions: clone(state.failedStageMissions || {}),
+      runSummary: clone(state.runSummary || null),
+      selectedBallSkinId: state.selectedBallSkinId || (save.cosmetics && save.cosmetics.selectedBallSkinId) || "default_ball",
+      selectedPaddleSkinId: state.selectedPaddleSkinId || (save.cosmetics && save.cosmetics.selectedPaddleSkinId) || "default_paddle",
       highestStageReached: state.highestStageReached,
       bossesDefeated: state.bossesDefeated,
       runElapsedTime: state.runElapsedTime
@@ -881,6 +1035,19 @@
     return state.persistent.abyssStones;
   }
 
+  function isClassUnlocked(classId, save) {
+    var target = syncClassUnlocks(save || getRunState().persistent);
+    return !!(Data.CLASSES[classId] && target.unlockedClasses[classId]);
+  }
+
+  function canUnlockClass(classId, save) {
+    var target = syncClassUnlocks(save || getRunState().persistent);
+    var classData = Data.CLASSES[classId];
+    var cost = classData ? Math.max(0, Math.floor(classData.unlockCost || 0)) : 0;
+
+    return !!(classData && !target.unlockedClasses[classId] && nonNegativeInt(target.abyssStones, 0) >= cost);
+  }
+
   function purchaseMetaUpgrade(upgradeId) {
     var state = getRunState();
     var upgrade = Data.META_UPGRADES[upgradeId];
@@ -906,17 +1073,29 @@
     var state = getRunState();
     var classData = Data.CLASSES[classId];
 
-    if (!classData || state.persistent.unlockedClasses[classId]) {
+    syncClassUnlocks(state.persistent);
+
+    if (!classData) {
       return false;
     }
 
-    if (state.persistent.abyssStones < classData.unlockCost) {
+    if (isClassUnlocked(classId, state.persistent)) {
+      state.persistent.selectedClassId = classId;
+      replacePersistent(state.persistent);
+      return true;
+    }
+
+    if (!canUnlockClass(classId, state.persistent)) {
+      replacePersistent(state.persistent);
       return false;
     }
 
     state.persistent.abyssStones -= classData.unlockCost;
     state.persistent.unlockedClasses[classId] = true;
     state.persistent.unlocks = state.persistent.unlocks || createUnlockDefaults(Data.STORAGE_DEFAULTS);
+    state.persistent.unlocks.classes = state.persistent.unlocks.classes || {};
+    state.persistent.unlocks.relics = state.persistent.unlocks.relics || {};
+    state.persistent.unlocks.evolutions = state.persistent.unlocks.evolutions || {};
     state.persistent.unlocks.classes[classId] = true;
     if (classId === "alchemist") {
       state.persistent.unlocks.relics.alchemist_star = true;
@@ -927,6 +1106,7 @@
       state.persistent.unlocks.evolutions.perfect_tuning = true;
     }
     state.persistent.selectedClassId = classId;
+    syncClassUnlocks(state.persistent);
     replacePersistent(state.persistent);
     return true;
   }
@@ -934,7 +1114,9 @@
   function selectClass(classId) {
     var state = getRunState();
 
-    if (!Data.CLASSES[classId] || !state.persistent.unlockedClasses[classId]) {
+    syncClassUnlocks(state.persistent);
+
+    if (!Data.CLASSES[classId] || !isClassUnlocked(classId, state.persistent)) {
       return false;
     }
 
@@ -1013,6 +1195,65 @@
     return true;
   }
 
+  function discover(group, id) {
+    var state = getRunState();
+
+    if (!state.persistent.discovered || !state.persistent.discovered[group] || !id) {
+      return false;
+    }
+    if (state.persistent.discovered[group][id]) {
+      return false;
+    }
+
+    state.persistent.discovered[group][id] = true;
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function unlockCosmetic(kind, id) {
+    var state = getRunState();
+    var cosmetics = state.persistent.cosmetics;
+    var group = kind === "paddle" ? "unlockedPaddleSkins" : "unlockedBallSkins";
+    var definitions = kind === "paddle" ? Data.COSMETICS.paddleSkins : Data.COSMETICS.ballSkins;
+
+    if (!cosmetics || !definitions[id]) {
+      return false;
+    }
+    if (cosmetics[group][id]) {
+      return false;
+    }
+
+    cosmetics[group][id] = true;
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function selectCosmetic(kind, id) {
+    var state = getRunState();
+    var cosmetics = state.persistent.cosmetics;
+
+    if (!cosmetics) {
+      return false;
+    }
+
+    if (kind === "paddle") {
+      if (!Data.COSMETICS.paddleSkins[id] || !cosmetics.unlockedPaddleSkins[id]) {
+        return false;
+      }
+      cosmetics.selectedPaddleSkinId = id;
+      state.selectedPaddleSkinId = id;
+    } else {
+      if (!Data.COSMETICS.ballSkins[id] || !cosmetics.unlockedBallSkins[id]) {
+        return false;
+      }
+      cosmetics.selectedBallSkinId = id;
+      state.selectedBallSkinId = id;
+    }
+
+    replacePersistent(state.persistent);
+    return true;
+  }
+
   function applyImportedSave(text) {
     var parsed;
 
@@ -1049,9 +1290,19 @@
     if (isObject(nextSettings)) {
       if (typeof nextSettings.sound === "boolean") {
         settings.sound = nextSettings.sound;
+        settings.soundEnabled = nextSettings.sound;
+      }
+      if (typeof nextSettings.soundEnabled === "boolean") {
+        settings.sound = nextSettings.soundEnabled;
+        settings.soundEnabled = nextSettings.soundEnabled;
       }
       if (typeof nextSettings.vibration === "boolean") {
         settings.vibration = nextSettings.vibration;
+        settings.vibrationEnabled = nextSettings.vibration;
+      }
+      if (typeof nextSettings.vibrationEnabled === "boolean") {
+        settings.vibration = nextSettings.vibrationEnabled;
+        settings.vibrationEnabled = nextSettings.vibrationEnabled;
       }
       if (typeof nextSettings.reducedEffects === "boolean") {
         settings.reducedEffects = nextSettings.reducedEffects;
@@ -1095,10 +1346,16 @@
     addAbyssStones: addAbyssStones,
     purchaseMetaUpgrade: purchaseMetaUpgrade,
     unlockClass: unlockClass,
+    isClassUnlocked: isClassUnlocked,
+    canUnlockClass: canUnlockClass,
+    syncClassUnlocks: syncClassUnlocks,
     selectClass: selectClass,
     selectGameMode: selectGameMode,
     unlockAllModes: unlockAllModes,
     unlockAchievement: unlockAchievement,
+    discover: discover,
+    unlockCosmetic: unlockCosmetic,
+    selectCosmetic: selectCosmetic,
     applyImportedSave: applyImportedSave,
     exportSaveText: exportSaveText,
     resetAllProgress: resetAllProgress,
