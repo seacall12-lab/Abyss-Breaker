@@ -263,6 +263,11 @@
       Object.keys(defaults.classes).forEach(function (classId) {
         result.classes[classId] = sanitizeModeRecord(isObject(value.classes) ? value.classes[classId] : null, defaults.classes[classId]);
       });
+      result.endgame = sanitizeModeRecord(value.endgame, defaults.endgame || {});
+      result.builds = {};
+      Object.keys(defaults.builds || {}).forEach(function (buildId) {
+        result.builds[buildId] = sanitizeModeRecord(isObject(value.builds) ? value.builds[buildId] : null, defaults.builds[buildId]);
+      });
     }
 
     result.standard.bestScore = Math.max(result.standard.bestScore, nonNegativeInt(legacy.bestScore, 0));
@@ -334,6 +339,9 @@
     discovered.items = discovered.items || {};
     discovered.bosses = discovered.bosses || {};
     discovered.zones = discovered.zones || {};
+    discovered.cores = discovered.cores || {};
+    discovered.boards = discovered.boards || {};
+    discovered.chips = discovered.chips || {};
 
     Data.UPGRADES.forEach(function (upgrade) { discovered.upgrades[upgrade.id] = !!discovered.upgrades[upgrade.id]; });
     Data.RELICS.forEach(function (relic) { discovered.relics[relic.id] = !!discovered.relics[relic.id]; });
@@ -341,10 +349,15 @@
     Data.ITEMS.definitions.forEach(function (item) { discovered.items[item.id] = !!discovered.items[item.id]; });
     Object.keys(Data.BOSSES).forEach(function (id) { discovered.bosses[id] = !!discovered.bosses[id]; });
     Object.keys(Data.ZONES).forEach(function (id) { discovered.zones[id] = !!discovered.zones[id]; });
+    Object.keys(Data.BALL_CORES || {}).forEach(function (id) { discovered.cores[id] = !!discovered.cores[id]; });
+    Object.keys(Data.BOARD_FRAMES || {}).forEach(function (id) { discovered.boards[id] = !!discovered.boards[id]; });
+    Object.keys(Data.SKILL_CHIPS || {}).forEach(function (id) { discovered.chips[id] = !!discovered.chips[id]; });
 
     Data.UPGRADES.slice(0, 3).forEach(function (upgrade) { discovered.upgrades[upgrade.id] = true; });
     Data.ITEMS.definitions.forEach(function (item) { discovered.items[item.id] = true; });
     discovered.zones.gate = true;
+    discovered.cores.default_ball_core = true;
+    discovered.boards.default_board_frame = true;
     return discovered;
   }
 
@@ -368,6 +381,221 @@
       unlockedPaddleSkins: paddleSkins,
       selectedBallSkinId: selectedBall,
       selectedPaddleSkinId: selectedPaddle
+    };
+  }
+
+  function sanitizeEndgame(value, defaults, legacyRunClearCount) {
+    var cleared = nonNegativeInt(legacyRunClearCount, 0) > 0;
+    return {
+      abyssTowerUnlocked: isObject(value) && typeof value.abyssTowerUnlocked === "boolean" ? value.abyssTowerUnlocked : cleared,
+      bossRushUnlocked: isObject(value) && typeof value.bossRushUnlocked === "boolean" ? value.bossRushUnlocked : cleared,
+      towerBestFloor: nonNegativeInt(isObject(value) ? value.towerBestFloor : undefined, defaults.endgame.towerBestFloor),
+      bossRushBestStage: nonNegativeInt(isObject(value) ? value.bossRushBestStage : undefined, defaults.endgame.bossRushBestStage),
+      bossRushBestTime: isObject(value) && typeof value.bossRushBestTime === "number" && isFinite(value.bossRushBestTime) ? Math.max(0, value.bossRushBestTime) : defaults.endgame.bossRushBestTime
+    };
+  }
+
+  function sanitizeClassMastery(value, defaults) {
+    var result = clone(defaults.classMastery || {});
+
+    Object.keys(Data.CLASSES).forEach(function (classId) {
+      var source = isObject(value) && isObject(value[classId]) ? value[classId] : {};
+      result[classId] = {
+        level: clampInt(source.level, 1, 10, result[classId] ? result[classId].level : 1),
+        exp: nonNegativeInt(source.exp, result[classId] ? result[classId].exp : 0)
+      };
+    });
+
+    return result;
+  }
+
+  function sanitizeMutations(value, defaults) {
+    var result = { clearedCounts: {}, totalClears: 0 };
+
+    Object.keys(Data.MUTATIONS || {}).forEach(function (id) {
+      result.clearedCounts[id] = nonNegativeInt(isObject(value) && isObject(value.clearedCounts) ? value.clearedCounts[id] : undefined, defaults.mutations && defaults.mutations.clearedCounts ? defaults.mutations.clearedCounts[id] : 0);
+      result.totalClears += result.clearedCounts[id];
+    });
+    result.totalClears = Math.max(result.totalClears, nonNegativeInt(isObject(value) ? value.totalClears : undefined, defaults.mutations ? defaults.mutations.totalClears : 0));
+    return result;
+  }
+
+  function sanitizeBuildStats(value, defaults) {
+    var result = clone(defaults.buildStats || { bestScores: {}, discoveredArchetypes: {} });
+
+    Object.keys(Data.BUILD_ARCHETYPES || {}).forEach(function (id) {
+      result.bestScores[id] = nonNegativeInt(isObject(value) && isObject(value.bestScores) ? value.bestScores[id] : undefined, result.bestScores[id] || 0);
+      result.discoveredArchetypes[id] = !!(isObject(value) && isObject(value.discoveredArchetypes) && value.discoveredArchetypes[id]) || !!result.discoveredArchetypes[id];
+    });
+
+    return result;
+  }
+
+  function sanitizeEmblems(value, defaults) {
+    var ids = Object.keys(Data.EMBLEMS || {});
+    var unlocked = sanitizeBooleanMap(isObject(value) ? value.unlocked : null, ids, ["default_emblem"]);
+    var selected = isObject(value) && Data.EMBLEMS[value.selectedEmblemId] ? value.selectedEmblemId : defaults.emblems.selectedEmblemId;
+
+    if (!unlocked[selected]) {
+      selected = "default_emblem";
+    }
+
+    return {
+      unlocked: unlocked,
+      selectedEmblemId: selected
+    };
+  }
+
+  function getEquipmentMap(kind) {
+    if (kind === "core") {
+      return Data.BALL_CORES || {};
+    }
+    if (kind === "board") {
+      return Data.BOARD_FRAMES || {};
+    }
+    return Data.SKILL_CHIPS || {};
+  }
+
+  function getEquipmentOrder(kind) {
+    if (kind === "core") {
+      return Data.BALL_CORE_ORDER || Object.keys(Data.BALL_CORES || {});
+    }
+    if (kind === "board") {
+      return Data.BOARD_FRAME_ORDER || Object.keys(Data.BOARD_FRAMES || {});
+    }
+    return Data.SKILL_CHIP_ORDER || Object.keys(Data.SKILL_CHIPS || {});
+  }
+
+  function getEquipmentById(kind, id) {
+    var map = getEquipmentMap(kind);
+    return id && map[id] ? map[id] : null;
+  }
+
+  function sanitizeOwnedEquipment(value, kind, defaults) {
+    var result = clone(defaults || {});
+    var ids = getEquipmentOrder(kind);
+
+    ids.forEach(function (id) {
+      result[id] = nonNegativeInt(isObject(value) ? value[id] : undefined, result[id] || 0);
+    });
+    if (kind === "core") {
+      result.default_ball_core = Math.max(1, result.default_ball_core || 0);
+    } else if (kind === "board") {
+      result.default_board_frame = Math.max(1, result.default_board_frame || 0);
+    }
+    return result;
+  }
+
+  function countOwned(owned, id) {
+    return Math.max(0, Math.floor(owned && owned[id] || 0));
+  }
+
+  function sanitizeChipList(value, owned, allowedTypes, slotCount) {
+    var result = [];
+    var used = {};
+    var max = Math.max(0, Math.floor(slotCount || 0));
+
+    if (!Array.isArray(value) || max <= 0) {
+      return result;
+    }
+
+    value.forEach(function (id) {
+      var chip = getEquipmentById("chip", id);
+      if (!chip || used[id] || result.length >= max || countOwned(owned, id) <= 0) {
+        return;
+      }
+      if (allowedTypes && allowedTypes.indexOf(chip.chipType) === -1) {
+        return;
+      }
+      used[id] = true;
+      result.push(id);
+    });
+    return result;
+  }
+
+  function sanitizePreset(value, defaults, ownedCores, ownedBoards, ownedChips) {
+    var source = isObject(value) ? value : {};
+    var coreId = getEquipmentById("core", source.coreId) && countOwned(ownedCores, source.coreId) > 0 ? source.coreId : defaults.coreId;
+    var boardId = getEquipmentById("board", source.boardId) && countOwned(ownedBoards, source.boardId) > 0 ? source.boardId : defaults.boardId;
+    var core = getEquipmentById("core", coreId) || getEquipmentById("core", defaults.coreId);
+    var board = getEquipmentById("board", boardId) || getEquipmentById("board", defaults.boardId);
+
+    return {
+      id: defaults.id,
+      name: typeof source.name === "string" && source.name ? source.name : defaults.name,
+      coreId: coreId,
+      boardId: boardId,
+      coreChipIds: sanitizeChipList(source.coreChipIds, ownedChips, Data.CORE_CHIP_TYPES || [], core ? core.slotCount : 0),
+      boardChipIds: sanitizeChipList(source.boardChipIds, ownedChips, Data.BOARD_CHIP_TYPES || [], board ? board.slotCount : 0)
+    };
+  }
+
+  function sanitizeEquipment(value, defaults) {
+    var ownedCores = sanitizeOwnedEquipment(isObject(value) ? value.ownedCores : null, "core", defaults.equipment.ownedCores);
+    var ownedBoards = sanitizeOwnedEquipment(isObject(value) ? value.ownedBoards : null, "board", defaults.equipment.ownedBoards);
+    var ownedChips = sanitizeOwnedEquipment(isObject(value) ? value.ownedChips : null, "chip", defaults.equipment.ownedChips);
+    var presets = {};
+    var sourcePresets = isObject(value) && isObject(value.presets) ? value.presets : {};
+
+    Object.keys(defaults.equipment.presets).forEach(function (id) {
+      presets[id] = sanitizePreset(sourcePresets[id], defaults.equipment.presets[id], ownedCores, ownedBoards, ownedChips);
+    });
+
+    var selected = isObject(value) && presets[value.selectedPresetId] ? value.selectedPresetId : defaults.equipment.selectedPresetId;
+
+    return {
+      ownedCores: ownedCores,
+      ownedBoards: ownedBoards,
+      ownedChips: ownedChips,
+      selectedPresetId: selected,
+      presets: presets
+    };
+  }
+
+  function sanitizePityGroup(value) {
+    return {
+      rare: nonNegativeInt(isObject(value) ? value.rare : undefined, 0),
+      epic: nonNegativeInt(isObject(value) ? value.epic : undefined, 0),
+      legendary: nonNegativeInt(isObject(value) ? value.legendary : undefined, 0)
+    };
+  }
+
+  function sanitizeResearch(value, defaults) {
+    var result = clone(defaults.research);
+    var source = isObject(value) ? value : {};
+
+    result.abyssFragments = nonNegativeInt(source.abyssFragments, result.abyssFragments);
+    result.pity = {
+      core: sanitizePityGroup(isObject(source.pity) ? source.pity.core : null),
+      board: sanitizePityGroup(isObject(source.pity) ? source.pity.board : null),
+      chip: sanitizePityGroup(isObject(source.pity) ? source.pity.chip : null)
+    };
+    result.totalPulls = {
+      core: nonNegativeInt(isObject(source.totalPulls) ? source.totalPulls.core : undefined, 0),
+      board: nonNegativeInt(isObject(source.totalPulls) ? source.totalPulls.board : undefined, 0),
+      chip: nonNegativeInt(isObject(source.totalPulls) ? source.totalPulls.chip : undefined, 0)
+    };
+    result.lastResults = Array.isArray(source.lastResults) ? source.lastResults.filter(function (entry) {
+      return isObject(entry) && getEquipmentById(entry.kind, entry.id);
+    }).slice(0, 10) : [];
+    return result;
+  }
+
+  function sanitizeAccessibility(value, defaults) {
+    var source = isObject(value) ? value : {};
+    var settingsSource = isObject(source) ? source : {};
+
+    function oneOf(v, list, fallback) {
+      return list.indexOf(v) !== -1 ? v : fallback;
+    }
+
+    return {
+      ballSize: oneOf(settingsSource.ballSize, ["small", "default", "large"], defaults.accessibility.ballSize),
+      paddleSize: oneOf(settingsSource.paddleSize, ["default", "wide", "extra_wide"], defaults.accessibility.paddleSize),
+      touchSensitivity: oneOf(settingsSource.touchSensitivity, ["low", "default", "high"], defaults.accessibility.touchSensitivity),
+      highContrast: typeof settingsSource.highContrast === "boolean" ? settingsSource.highContrast : defaults.accessibility.highContrast,
+      reducedEffects: typeof settingsSource.reducedEffects === "boolean" ? settingsSource.reducedEffects : defaults.accessibility.reducedEffects,
+      screenShake: typeof settingsSource.screenShake === "boolean" ? settingsSource.screenShake : defaults.accessibility.screenShake
     };
   }
 
@@ -425,7 +653,8 @@
       maxActiveBalls: 1,
       livesLost: 0,
       upgradesSelected: 0,
-      relicsSelected: 0
+      relicsSelected: 0,
+      buildScores: {}
     };
     var result = clone(defaults);
 
@@ -434,7 +663,14 @@
     }
 
     Object.keys(defaults).forEach(function (key) {
-      result[key] = key === "maxActiveBalls" ? Math.max(1, nonNegativeInt(value[key], defaults[key])) : nonNegativeInt(value[key], defaults[key]);
+      if (key === "buildScores") {
+        result.buildScores = {};
+        Object.keys(Data.BUILD_ARCHETYPES || {}).forEach(function (buildId) {
+          result.buildScores[buildId] = nonNegativeInt(isObject(value.buildScores) ? value.buildScores[buildId] : undefined, 0);
+        });
+      } else {
+        result[key] = key === "maxActiveBalls" ? Math.max(1, nonNegativeInt(value[key], defaults[key])) : nonNegativeInt(value[key], defaults[key]);
+      }
     });
 
     return result;
@@ -553,6 +789,14 @@
       completedStageMissions: isObject(value.completedStageMissions) ? clone(value.completedStageMissions) : {},
       failedStageMissions: isObject(value.failedStageMissions) ? clone(value.failedStageMissions) : {},
       runSummary: isObject(value.runSummary) ? clone(value.runSummary) : null,
+      endgameMode: typeof value.endgameMode === "string" ? value.endgameMode : "",
+      activeMutationIds: Array.isArray(value.activeMutationIds) ? value.activeMutationIds.filter(function (id) { return Data.MUTATIONS && Data.MUTATIONS[id]; }).slice(0, 2) : [],
+      buildScores: isObject(value.buildScores) ? clone(value.buildScores) : {},
+      appliedCoreId: getEquipmentById("core", value.appliedCoreId) ? value.appliedCoreId : null,
+      appliedBoardId: getEquipmentById("board", value.appliedBoardId) ? value.appliedBoardId : null,
+      appliedCoreChipIds: sanitizeChipList(value.appliedCoreChipIds, save.equipment && save.equipment.ownedChips, Data.CORE_CHIP_TYPES || [], 3),
+      appliedBoardChipIds: sanitizeChipList(value.appliedBoardChipIds, save.equipment && save.equipment.ownedChips, Data.BOARD_CHIP_TYPES || [], 3),
+      accessibilitySnapshot: sanitizeAccessibility(value.accessibilitySnapshot, Data.STORAGE_DEFAULTS),
       selectedBallSkinId: save.cosmetics ? save.cosmetics.selectedBallSkinId : "default_ball",
       selectedPaddleSkinId: save.cosmetics ? save.cosmetics.selectedPaddleSkinId : "default_paddle",
       highestStageReached: Math.max(stage, positiveInt(value.highestStageReached, stage)),
@@ -622,6 +866,14 @@
       missions: sanitizeMissions(value.missions, defaults),
       discovered: sanitizeDiscovered(value.discovered, defaults),
       cosmetics: sanitizeCosmetics(value.cosmetics, defaults),
+      endgame: sanitizeEndgame(value.endgame, defaults, legacy.runClearCount),
+      classMastery: sanitizeClassMastery(value.classMastery, defaults),
+      mutations: sanitizeMutations(value.mutations, defaults),
+      buildStats: sanitizeBuildStats(value.buildStats, defaults),
+      emblems: sanitizeEmblems(value.emblems, defaults),
+      equipment: sanitizeEquipment(value.equipment, defaults),
+      research: sanitizeResearch(value.research, defaults),
+      accessibility: sanitizeAccessibility(isObject(value.accessibility) ? value.accessibility : value.settings, defaults),
       settings: sanitizeSettings(value.settings, defaults),
       tutorial: sanitizeTutorial(value.tutorial, defaults),
       dailyChallenge: sanitizeDailyChallenge(value.dailyChallenge),
@@ -646,6 +898,8 @@
       var fromCurrentKey = !!raw;
 
       raw = raw ||
+        storage.getItem("abyssBreaker.save.v7") ||
+        storage.getItem("abyssBreaker.save.v6") ||
         storage.getItem("abyssBreaker.save.v5") ||
         storage.getItem("abyssBreaker.save.v4") ||
         storage.getItem("abyssBreaker.save.v3") ||
@@ -796,13 +1050,20 @@
       },
       evolutionStageFlags: {},
       runModifiers: {},
+      endgameMode: "",
+      activeMutationIds: [],
+      buildScores: {},
       currentStageMission: null,
       stageMissionProgress: {},
       completedStageMissions: {},
       failedStageMissions: {},
       runSummary: null,
+      appliedEquipment: null,
+      equipmentStageFlags: {},
+      accessibilitySnapshot: clone(persistent.accessibility || Data.STORAGE_DEFAULTS.accessibility),
       selectedBallSkinId: persistent.cosmetics ? persistent.cosmetics.selectedBallSkinId : "default_ball",
       selectedPaddleSkinId: persistent.cosmetics ? persistent.cosmetics.selectedPaddleSkinId : "default_paddle",
+      selectedEmblemId: persistent.emblems ? persistent.emblems.selectedEmblemId : "default_emblem",
       rng: null,
       tutorial: {
         active: false,
@@ -973,6 +1234,14 @@
       completedStageMissions: clone(state.completedStageMissions || {}),
       failedStageMissions: clone(state.failedStageMissions || {}),
       runSummary: clone(state.runSummary || null),
+      endgameMode: state.endgameMode || "",
+      activeMutationIds: Array.isArray(state.activeMutationIds) ? state.activeMutationIds.slice(0, 2) : [],
+      buildScores: clone(state.buildScores || {}),
+      appliedCoreId: state.appliedEquipment ? state.appliedEquipment.coreId : null,
+      appliedBoardId: state.appliedEquipment ? state.appliedEquipment.boardId : null,
+      appliedCoreChipIds: state.appliedEquipment && Array.isArray(state.appliedEquipment.coreChipIds) ? state.appliedEquipment.coreChipIds.slice() : [],
+      appliedBoardChipIds: state.appliedEquipment && Array.isArray(state.appliedEquipment.boardChipIds) ? state.appliedEquipment.boardChipIds.slice() : [],
+      accessibilitySnapshot: clone(state.accessibilitySnapshot || (save.accessibility || Data.STORAGE_DEFAULTS.accessibility)),
       selectedBallSkinId: state.selectedBallSkinId || (save.cosmetics && save.cosmetics.selectedBallSkinId) || "default_ball",
       selectedPaddleSkinId: state.selectedPaddleSkinId || (save.cosmetics && save.cosmetics.selectedPaddleSkinId) || "default_paddle",
       highestStageReached: state.highestStageReached,
@@ -1254,6 +1523,335 @@
     return true;
   }
 
+  function unlockEmblem(id) {
+    var state = getRunState();
+
+    if (!Data.EMBLEMS || !Data.EMBLEMS[id]) {
+      return false;
+    }
+    state.persistent.emblems = state.persistent.emblems || clone(Data.STORAGE_DEFAULTS.emblems);
+    state.persistent.emblems.unlocked = state.persistent.emblems.unlocked || {};
+    if (state.persistent.emblems.unlocked[id]) {
+      return false;
+    }
+    state.persistent.emblems.unlocked[id] = true;
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function selectEmblem(id) {
+    var state = getRunState();
+
+    if (!Data.EMBLEMS || !Data.EMBLEMS[id] || !state.persistent.emblems || !state.persistent.emblems.unlocked[id]) {
+      return false;
+    }
+    state.persistent.emblems.selectedEmblemId = id;
+    state.selectedEmblemId = id;
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function getSelectedPreset(save) {
+    var equipment = save && save.equipment;
+    var selected = equipment && equipment.selectedPresetId || "preset_1";
+    return equipment && equipment.presets && equipment.presets[selected] ? equipment.presets[selected] : Data.STORAGE_DEFAULTS.equipment.presets.preset_1;
+  }
+
+  function getAppliedEquipment(save) {
+    var clean = sanitizeSave(save || getRunState().persistent);
+    var preset = getSelectedPreset(clean);
+    return {
+      presetId: clean.equipment.selectedPresetId,
+      coreId: preset.coreId || "default_ball_core",
+      boardId: preset.boardId || "default_board_frame",
+      coreChipIds: Array.isArray(preset.coreChipIds) ? preset.coreChipIds.slice(0, 3) : [],
+      boardChipIds: Array.isArray(preset.boardChipIds) ? preset.boardChipIds.slice(0, 3) : []
+    };
+  }
+
+  function getOwnedMap(save, kind) {
+    var equipment = save && save.equipment || {};
+    if (kind === "core") {
+      return equipment.ownedCores || {};
+    }
+    if (kind === "board") {
+      return equipment.ownedBoards || {};
+    }
+    return equipment.ownedChips || {};
+  }
+
+  function setOwnedCount(save, kind, id, count) {
+    var equipment = save.equipment;
+    if (kind === "core") {
+      equipment.ownedCores[id] = count;
+    } else if (kind === "board") {
+      equipment.ownedBoards[id] = count;
+    } else {
+      equipment.ownedChips[id] = count;
+    }
+  }
+
+  function getChipAllowedTypes(slot) {
+    return slot === "board" ? (Data.BOARD_CHIP_TYPES || []) : (Data.CORE_CHIP_TYPES || []);
+  }
+
+  function selectEquipmentPreset(presetId) {
+    var state = getRunState();
+
+    if (!state.persistent.equipment || !state.persistent.equipment.presets[presetId]) {
+      return false;
+    }
+    state.persistent.equipment.selectedPresetId = presetId;
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function equipCore(coreId) {
+    var state = getRunState();
+    var save = state.persistent;
+    var preset = getSelectedPreset(save);
+
+    if (!getEquipmentById("core", coreId) || countOwned(save.equipment.ownedCores, coreId) <= 0) {
+      return false;
+    }
+    preset.coreId = coreId;
+    preset.coreChipIds = sanitizeChipList(preset.coreChipIds, save.equipment.ownedChips, Data.CORE_CHIP_TYPES || [], getEquipmentById("core", coreId).slotCount);
+    replacePersistent(save);
+    return true;
+  }
+
+  function equipBoard(boardId) {
+    var state = getRunState();
+    var save = state.persistent;
+    var preset = getSelectedPreset(save);
+
+    if (!getEquipmentById("board", boardId) || countOwned(save.equipment.ownedBoards, boardId) <= 0) {
+      return false;
+    }
+    preset.boardId = boardId;
+    preset.boardChipIds = sanitizeChipList(preset.boardChipIds, save.equipment.ownedChips, Data.BOARD_CHIP_TYPES || [], getEquipmentById("board", boardId).slotCount);
+    replacePersistent(save);
+    return true;
+  }
+
+  function equipChip(slot, chipId) {
+    var state = getRunState();
+    var save = state.persistent;
+    var preset = getSelectedPreset(save);
+    var chip = getEquipmentById("chip", chipId);
+    var listName = slot === "board" ? "boardChipIds" : "coreChipIds";
+    var host = slot === "board" ? getEquipmentById("board", preset.boardId) : getEquipmentById("core", preset.coreId);
+    var allowed = getChipAllowedTypes(slot);
+    var list = preset[listName] || [];
+
+    if (!chip || countOwned(save.equipment.ownedChips, chipId) <= 0 || allowed.indexOf(chip.chipType) === -1 || list.indexOf(chipId) !== -1) {
+      return false;
+    }
+    if (list.length >= Math.max(0, host && host.slotCount || 0)) {
+      return false;
+    }
+    list.push(chipId);
+    preset[listName] = list;
+    replacePersistent(save);
+    return true;
+  }
+
+  function unequipChip(slot, chipId) {
+    var state = getRunState();
+    var preset = getSelectedPreset(state.persistent);
+    var listName = slot === "board" ? "boardChipIds" : "coreChipIds";
+    var list = Array.isArray(preset[listName]) ? preset[listName] : [];
+    var next = list.filter(function (id) { return id !== chipId; });
+
+    if (next.length === list.length) {
+      return false;
+    }
+    preset[listName] = next;
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function gradeAtLeast(grade, target) {
+    var order = Data.EQUIPMENT_GRADE_ORDER || [];
+    return order.indexOf(grade) >= order.indexOf(target);
+  }
+
+  function choosePullGrade(kind, research) {
+    var pity = research.pity[kind] || { rare: 0, epic: 0, legendary: 0 };
+    var limits = Data.EQUIPMENT_PITY_LIMITS || {};
+
+    if (pity.legendary + 1 >= (limits.legendary || 80)) {
+      return "legendary";
+    }
+    if (pity.epic + 1 >= (limits.epic || 30)) {
+      return "epic";
+    }
+    if (pity.rare + 1 >= (limits.rare || 10)) {
+      return "rare";
+    }
+
+    var grades = Data.EQUIPMENT_GRADE_ORDER || ["common", "rare", "epic", "legendary"];
+    var total = grades.reduce(function (sum, grade) {
+      return sum + Math.max(0, Data.EQUIPMENT_GRADES[grade] ? Data.EQUIPMENT_GRADES[grade].weight : 0);
+    }, 0);
+    var roll = Math.random() * Math.max(1, total);
+    for (var index = 0; index < grades.length; index++) {
+      var gradeId = grades[index];
+      roll -= Math.max(0, Data.EQUIPMENT_GRADES[gradeId] ? Data.EQUIPMENT_GRADES[gradeId].weight : 0);
+      if (roll <= 0) {
+        return gradeId;
+      }
+    }
+    return "common";
+  }
+
+  function pickEquipmentId(kind, grade) {
+    var ids = getEquipmentOrder(kind).filter(function (id) {
+      var item = getEquipmentById(kind, id);
+      return item && item.grade === grade;
+    });
+    if (!ids.length) {
+      ids = getEquipmentOrder(kind).filter(function (id) { return !!getEquipmentById(kind, id); });
+    }
+    return ids[Math.floor(Math.random() * ids.length)] || null;
+  }
+
+  function recordEquipmentGain(save, kind, id) {
+    var item = getEquipmentById(kind, id);
+    var owned = getOwnedMap(save, kind);
+    var duplicate = countOwned(owned, id) > 0;
+    var fragments = 0;
+
+    if (!item) {
+      return null;
+    }
+    if (duplicate) {
+      fragments = Data.EQUIPMENT_GRADES[item.grade] ? Data.EQUIPMENT_GRADES[item.grade].fragments : 2;
+      save.research.abyssFragments += fragments;
+    } else {
+      setOwnedCount(save, kind, id, 1);
+      save.discovered = save.discovered || {};
+      if (kind === "core") {
+        save.discovered.cores = save.discovered.cores || {};
+        save.discovered.cores[id] = true;
+      } else if (kind === "board") {
+        save.discovered.boards = save.discovered.boards || {};
+        save.discovered.boards[id] = true;
+      } else {
+        save.discovered.chips = save.discovered.chips || {};
+        save.discovered.chips[id] = true;
+      }
+    }
+    return { kind: kind, id: id, name: item.name, grade: item.grade, duplicate: duplicate, fragments: fragments };
+  }
+
+  function updatePityAfterPull(research, kind, grade) {
+    var pity = research.pity[kind];
+    pity.rare += 1;
+    pity.epic += 1;
+    pity.legendary += 1;
+    if (gradeAtLeast(grade, "rare")) {
+      pity.rare = 0;
+    }
+    if (gradeAtLeast(grade, "epic")) {
+      pity.epic = 0;
+    }
+    if (gradeAtLeast(grade, "legendary")) {
+      pity.legendary = 0;
+    }
+  }
+
+  function extractEquipment(kind, count) {
+    var state = getRunState();
+    var save = state.persistent;
+    var pulls = count === 10 ? 10 : 1;
+    var costTable = Data.EQUIPMENT_PULL_COSTS[kind];
+    var cost = costTable ? (pulls === 10 ? costTable.ten : costTable.one) : 999999999;
+    var results = [];
+
+    if (!costTable || save.abyssStones < cost) {
+      return { ok: false, message: "자연석이 부족합니다.", results: [] };
+    }
+    save.abyssStones -= cost;
+    for (var index = 0; index < pulls; index++) {
+      var grade = choosePullGrade(kind, save.research);
+      var id = pickEquipmentId(kind, grade);
+      var result = recordEquipmentGain(save, kind, id);
+      if (result) {
+        results.push(result);
+        updatePityAfterPull(save.research, kind, result.grade);
+      }
+      save.research.totalPulls[kind] += 1;
+    }
+    save.research.lastResults = results.slice(-10);
+    replacePersistent(save);
+    return { ok: true, message: pulls + "회 추출 완료", results: results };
+  }
+
+  function craftEquipment(kind, id) {
+    var state = getRunState();
+    var save = state.persistent;
+    var item = getEquipmentById(kind, id);
+    var cost = item && Data.EQUIPMENT_CRAFT_COSTS ? Data.EQUIPMENT_CRAFT_COSTS[item.grade] : null;
+
+    if (!item || !cost || save.research.abyssFragments < cost || countOwned(getOwnedMap(save, kind), id) > 0) {
+      return false;
+    }
+    save.research.abyssFragments -= cost;
+    recordEquipmentGain(save, kind, id);
+    replacePersistent(save);
+    return true;
+  }
+
+  function scoreEquipmentForTags(item, tags) {
+    var score = 0;
+    (item.tags || []).forEach(function (tag) {
+      if (tags.indexOf(tag) !== -1) {
+        score += 3;
+      }
+    });
+    score += Math.max(0, (Data.EQUIPMENT_GRADE_ORDER || []).indexOf(item.grade));
+    return score;
+  }
+
+  function recommendEquipment(typeId) {
+    var state = getRunState();
+    var save = state.persistent;
+    var target = Data.RECOMMENDATION_TYPES[typeId] || Data.RECOMMENDATION_TYPES.attack;
+    var tags = target.tags || [];
+
+    function best(kind) {
+      var owned = getOwnedMap(save, kind);
+      var bestId = null;
+      var bestScore = -1;
+      Object.keys(owned).forEach(function (id) {
+        var item = getEquipmentById(kind, id);
+        var score = item && countOwned(owned, id) > 0 ? scoreEquipmentForTags(item, tags) : -1;
+        if (score > bestScore) {
+          bestScore = score;
+          bestId = id;
+        }
+      });
+      return bestId;
+    }
+
+    var coreId = best("core") || "default_ball_core";
+    var boardId = best("board") || "default_board_frame";
+    var chips = Object.keys(save.equipment.ownedChips || {}).filter(function (id) {
+      return countOwned(save.equipment.ownedChips, id) > 0 && getEquipmentById("chip", id);
+    }).sort(function (a, b) {
+      return scoreEquipmentForTags(getEquipmentById("chip", b), tags) - scoreEquipmentForTags(getEquipmentById("chip", a), tags);
+    });
+    var preset = getSelectedPreset(save);
+
+    preset.coreId = coreId;
+    preset.boardId = boardId;
+    preset.coreChipIds = sanitizeChipList(chips, save.equipment.ownedChips, Data.CORE_CHIP_TYPES || [], getEquipmentById("core", coreId).slotCount);
+    preset.boardChipIds = sanitizeChipList(chips, save.equipment.ownedChips, Data.BOARD_CHIP_TYPES || [], getEquipmentById("board", boardId).slotCount);
+    replacePersistent(save);
+    return true;
+  }
+
   function applyImportedSave(text) {
     var parsed;
 
@@ -1307,6 +1905,26 @@
       if (typeof nextSettings.reducedEffects === "boolean") {
         settings.reducedEffects = nextSettings.reducedEffects;
       }
+      state.persistent.accessibility = state.persistent.accessibility || clone(Data.STORAGE_DEFAULTS.accessibility);
+      if (["small", "default", "large"].indexOf(nextSettings.ballSize) !== -1) {
+        state.persistent.accessibility.ballSize = nextSettings.ballSize;
+      }
+      if (["default", "wide", "extra_wide"].indexOf(nextSettings.paddleSize) !== -1) {
+        state.persistent.accessibility.paddleSize = nextSettings.paddleSize;
+      }
+      if (["low", "default", "high"].indexOf(nextSettings.touchSensitivity) !== -1) {
+        state.persistent.accessibility.touchSensitivity = nextSettings.touchSensitivity;
+      }
+      if (typeof nextSettings.highContrast === "boolean") {
+        state.persistent.accessibility.highContrast = nextSettings.highContrast;
+      }
+      if (typeof nextSettings.accessibilityReducedEffects === "boolean") {
+        state.persistent.accessibility.reducedEffects = nextSettings.accessibilityReducedEffects;
+        settings.reducedEffects = nextSettings.accessibilityReducedEffects;
+      }
+      if (typeof nextSettings.screenShake === "boolean") {
+        state.persistent.accessibility.screenShake = nextSettings.screenShake;
+      }
     }
 
     replacePersistent(state.persistent);
@@ -1356,6 +1974,18 @@
     discover: discover,
     unlockCosmetic: unlockCosmetic,
     selectCosmetic: selectCosmetic,
+    unlockEmblem: unlockEmblem,
+    selectEmblem: selectEmblem,
+    getEquipmentById: getEquipmentById,
+    getAppliedEquipment: getAppliedEquipment,
+    selectEquipmentPreset: selectEquipmentPreset,
+    equipCore: equipCore,
+    equipBoard: equipBoard,
+    equipChip: equipChip,
+    unequipChip: unequipChip,
+    extractEquipment: extractEquipment,
+    craftEquipment: craftEquipment,
+    recommendEquipment: recommendEquipment,
     applyImportedSave: applyImportedSave,
     exportSaveText: exportSaveText,
     resetAllProgress: resetAllProgress,
