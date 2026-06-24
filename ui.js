@@ -22,6 +22,8 @@
   var recordsSignature = "";
   var compendiumSignature = "";
   var cosmeticsSignature = "";
+  var equipmentSignature = "";
+  var researchSignature = "";
   var compendiumTab = "upgrades";
   var cosmeticsTab = "ball";
   var hudSignature = "";
@@ -47,7 +49,7 @@
       "app", "game-shell", "lives-value", "score-value", "stage-value", "mode-value",
       "canvas-wrap", "game-canvas", "boss-hud", "boss-name", "boss-hp-fill", "boss-hp-value",
       "control-guide", "launch-button", "pause-button", "restart-button", "start-overlay",
-      "start-button", "mode-button", "class-button", "meta-button", "achievement-button",
+      "start-button", "mode-button", "class-button", "meta-button", "equipment-button", "research-button", "achievement-button",
       "records-button", "compendium-button", "cosmetics-button", "settings-button", "lobby-stones", "lobby-class", "lobby-mode",
       "lobby-best", "lobby-stage", "lobby-meta-summary", "lobby-continue-info",
       "new-run-button", "pause-overlay", "pause-run-info",
@@ -59,10 +61,14 @@
       "class-options", "class-close-button", "meta-overlay", "meta-stones-value",
       "meta-upgrade-options", "meta-close-button", "achievement-overlay",
       "achievement-summary", "achievement-list", "achievement-close-button", "records-overlay",
+      "equipment-overlay", "equipment-tabs", "equipment-summary", "equipment-recommendations", "equipment-content", "equipment-close-button",
+      "research-overlay", "research-summary", "core-pull-button", "board-pull-button", "chip-pull-button",
+      "core-pull10-button", "board-pull10-button", "chip-pull10-button", "research-results", "research-close-button",
       "records-content", "records-close-button", "compendium-overlay", "compendium-tabs",
       "compendium-content", "compendium-close-button", "cosmetics-overlay", "cosmetics-tabs",
       "cosmetics-content", "cosmetics-close-button", "settings-overlay", "sound-toggle",
-      "vibration-toggle", "reduced-effects-toggle", "save-data-input", "settings-message",
+      "vibration-toggle", "reduced-effects-toggle", "ball-size-select", "paddle-size-select",
+      "touch-sensitivity-select", "high-contrast-toggle", "screen-shake-toggle", "save-data-input", "settings-message",
       "save-export-button", "save-import-button", "save-reset-button", "settings-close-button",
       "gameover-overlay", "gameover-mode", "gameover-score", "gameover-stage", "gameover-time",
       "gameover-bricks", "gameover-items", "gameover-bosses", "gameover-missions", "gameover-stones",
@@ -249,6 +255,11 @@
     return State.getRunState().persistent.settings || Data.STORAGE_DEFAULTS.settings;
   }
 
+  function getTouchSensitivityMultiplier(state) {
+    var value = state && state.persistent && state.persistent.accessibility ? state.persistent.accessibility.touchSensitivity : "default";
+    return value === "high" ? 1.25 : value === "low" ? 0.8 : 1;
+  }
+
   function playSound(kind) {
     var settings = getSettings();
 
@@ -371,7 +382,7 @@
     [
       dom.startOverlay, dom.pauseOverlay, dom.lifeLostOverlay, dom.stageClearOverlay,
       dom.upgradeOverlay, dom.relicOverlay, dom.modeOverlay, dom.classOverlay, dom.metaOverlay,
-      dom.achievementOverlay, dom.recordsOverlay, dom.settingsOverlay, dom.gameoverOverlay,
+      dom.achievementOverlay, dom.equipmentOverlay, dom.researchOverlay, dom.recordsOverlay, dom.settingsOverlay, dom.gameoverOverlay,
       dom.compendiumOverlay, dom.cosmeticsOverlay, dom.runClearOverlay
     ].forEach(function (overlay) {
       setHidden(overlay, true);
@@ -541,7 +552,13 @@
       var unlocked = !!save.unlockedModes[id];
       var selected = save.selectedGameModeId === id;
       var action = selected ? "선택됨" : unlocked ? "선택" : mode.unlockText || "잠김";
-      var meta = mode.rules && mode.rules.endless ? "무한" : id === "standard" ? "기본" : "도전";
+      var meta = mode.rules && mode.rules.tower ? "엔드게임" : mode.rules && mode.rules.bossRush ? "보스전" : mode.rules && mode.rules.endless ? "무한" : id === "standard" ? "기본" : "도전";
+      if ((id === "standard" || id === "endless" || id === "abyss_tower") && Data.MUTATION_ORDER && Data.MUTATION_ORDER.length) {
+        var mutation = Data.MUTATIONS[Data.MUTATION_ORDER[(save.totalRuns || 0) % Data.MUTATION_ORDER.length]];
+        if (mutation) {
+          meta += " / 변이: " + mutation.name;
+        }
+      }
 
       dom.modeOptions.appendChild(createInfoButton("upgrade-card mode-card" + (selected ? " is-selected" : ""), mode.name, mode.description, meta, action, !unlocked || selected, function () {
         if (State.selectGameMode(id)) {
@@ -558,7 +575,7 @@
     var synced = State.syncClassUnlocks ? State.syncClassUnlocks(save) : save;
     var signature = Data.CLASS_ORDER.map(function (id) {
       return id + ":" + !!synced.unlockedClasses[id] + ":" + synced.selectedClassId + ":" + synced.abyssStones;
-    }).join("|") + ":" + classUnlockMessage;
+    }).join("|") + ":" + JSON.stringify(synced.classMastery || {}) + ":" + classUnlockMessage;
 
     if (signature === classSignature) {
       return;
@@ -577,13 +594,14 @@
 
     Data.CLASS_ORDER.forEach(function (id) {
       var classData = Data.CLASSES[id];
+      var mastery = synced.classMastery && synced.classMastery[id] || { level: 1, exp: 0 };
       var cost = Math.max(0, Math.floor(classData.unlockCost || 0));
       var stones = Math.max(0, Math.floor(synced.abyssStones || 0));
       var unlocked = State.isClassUnlocked ? State.isClassUnlocked(id, synced) : !!synced.unlockedClasses[id];
       var selected = synced.selectedClassId === id;
       var canUnlock = State.canUnlockClass ? State.canUnlockClass(id, synced) : stones >= cost;
       var action = selected ? "선택됨" : unlocked ? "선택" : canUnlock ? "해금 " + cost : "심연석 부족 " + stones + " / " + cost;
-      var meta = unlocked ? "해금됨" : "심연석 " + stones + " / " + cost;
+      var meta = (unlocked ? "해금됨" : "심연석 " + stones + " / " + cost) + " / 숙련도 Lv." + formatInteger(mastery.level) + " " + formatInteger(mastery.exp) + "/" + formatInteger(mastery.level * 100);
       var disabled = selected || (!unlocked && !canUnlock);
 
       dom.classOptions.appendChild(createInfoButton("upgrade-card class-card" + (selected ? " is-selected" : ""), classData.name, classData.description, meta, action, disabled, function () {
@@ -686,6 +704,12 @@
     dom.recordsContent.appendChild(createRecordLine("무한 최고 스테이지", formatInteger(records.endless.bestStage), "stage"));
     dom.recordsContent.appendChild(createRecordLine("무한 보스 처치", formatInteger(records.endless.bestBossesDefeated), "stage"));
     dom.recordsContent.appendChild(createRecordLine("미션 완료", formatInteger(save.missions && save.missions.totalCompleted), "mission_no_miss"));
+    if (records.endgame) {
+      dom.recordsContent.appendChild(createRecordLine("심연탑 최고층", formatInteger(records.endgame.towerBestFloor), "mode_tower"));
+      dom.recordsContent.appendChild(createRecordLine("보스 러시 최고 진행", formatInteger(records.endgame.bossRushBestStage), "mode_boss_rush"));
+      dom.recordsContent.appendChild(createRecordLine("보스 러시 최단 시간", records.endgame.bossRushBestTime ? formatTime(records.endgame.bossRushBestTime) : "-", "record"));
+      dom.recordsContent.appendChild(createRecordLine("구역 변이 클리어", formatInteger(records.endgame.mutationClears), "mutation_fracture"));
+    }
 
     Data.GAME_MODE_ORDER.forEach(function (id) {
       var mode = Data.GAME_MODES[id];
@@ -697,6 +721,13 @@
         return;
       }
       dom.recordsContent.appendChild(createRecordLine(mode.name, (record.cleared ? "클리어 " + formatInteger(record.clearCount) + "회" : "미클리어") + " / 최고 " + formatInteger(record.bestScore), getModeIconId(id)));
+    });
+    Object.keys(records.builds || {}).forEach(function (id) {
+      var archetype = Data.BUILD_ARCHETYPES && Data.BUILD_ARCHETYPES[id];
+      var record = records.builds[id];
+      if (archetype && record && record.bestScore > 0) {
+        dom.recordsContent.appendChild(createRecordLine(archetype.name, "최고 점수 " + formatInteger(record.bestScore), archetype.iconId));
+      }
     });
   }
 
@@ -734,7 +765,11 @@
       { id: "evolutions", label: "진화" },
       { id: "items", label: "아이템" },
       { id: "bosses", label: "보스" },
-      { id: "zones", label: "구역" }
+      { id: "zones", label: "구역" },
+      { id: "builds", label: "빌드" },
+      { id: "cores", label: "공 코어" },
+      { id: "boards", label: "보드" },
+      { id: "chips", label: "칩" }
     ];
 
     renderTabs(dom.compendiumTabs, tabs, compendiumTab, function (id) {
@@ -758,6 +793,16 @@
       Data.ITEMS.definitions.forEach(function (item) { appendDiscoveryCard(dom.compendiumContent, "items", item, discovered.items && discovered.items[item.id]); });
     } else if (compendiumTab === "bosses") {
       Object.keys(Data.BOSSES).forEach(function (id) { appendDiscoveryCard(dom.compendiumContent, "bosses", Data.BOSSES[id], discovered.bosses && discovered.bosses[id]); });
+    } else if (compendiumTab === "builds") {
+      Object.keys(Data.BUILD_ARCHETYPES || {}).forEach(function (id) {
+        appendDiscoveryCard(dom.compendiumContent, "builds", Data.BUILD_ARCHETYPES[id], save.buildStats && save.buildStats.discoveredArchetypes && save.buildStats.discoveredArchetypes[id]);
+      });
+    } else if (compendiumTab === "cores") {
+      (Data.BALL_CORE_ORDER || []).forEach(function (id) { appendDiscoveryCard(dom.compendiumContent, "cores", Data.BALL_CORES[id], discovered.cores && discovered.cores[id]); });
+    } else if (compendiumTab === "boards") {
+      (Data.BOARD_FRAME_ORDER || []).forEach(function (id) { appendDiscoveryCard(dom.compendiumContent, "boards", Data.BOARD_FRAMES[id], discovered.boards && discovered.boards[id]); });
+    } else if (compendiumTab === "chips") {
+      (Data.SKILL_CHIP_ORDER || []).forEach(function (id) { appendDiscoveryCard(dom.compendiumContent, "chips", Data.SKILL_CHIPS[id], discovered.chips && discovered.chips[id]); });
     } else {
       Object.keys(Data.ZONES).forEach(function (id) { appendDiscoveryCard(dom.compendiumContent, "zones", Data.ZONES[id], discovered.zones && discovered.zones[id]); });
     }
@@ -780,8 +825,9 @@
 
   function renderCosmetics(state) {
     var cosmetics = state.persistent.cosmetics || {};
-    var signature = cosmeticsTab + ":" + JSON.stringify(cosmetics);
-    var tabs = [{ id: "ball", label: "공" }, { id: "paddle", label: "패들" }];
+    var emblems = state.persistent.emblems || {};
+    var signature = cosmeticsTab + ":" + JSON.stringify(cosmetics) + ":" + JSON.stringify(emblems);
+    var tabs = [{ id: "ball", label: "공" }, { id: "paddle", label: "패들" }, { id: "emblem", label: "엠블럼" }];
 
     renderTabs(dom.cosmeticsTabs, tabs, cosmeticsTab, function (id) {
       cosmeticsTab = id;
@@ -798,12 +844,160 @@
       Object.keys(Data.COSMETICS.ballSkins).forEach(function (id) {
         appendCosmeticCard(dom.cosmeticsContent, "ball", Data.COSMETICS.ballSkins[id], cosmetics.unlockedBallSkins && cosmetics.unlockedBallSkins[id], cosmetics.selectedBallSkinId === id);
       });
-    } else {
+    } else if (cosmeticsTab === "paddle") {
       Object.keys(Data.COSMETICS.paddleSkins).forEach(function (id) {
         appendCosmeticCard(dom.cosmeticsContent, "paddle", Data.COSMETICS.paddleSkins[id], cosmetics.unlockedPaddleSkins && cosmetics.unlockedPaddleSkins[id], cosmetics.selectedPaddleSkinId === id);
       });
+    } else {
+      Object.keys(Data.EMBLEMS || {}).forEach(function (id) {
+        var item = Data.EMBLEMS[id];
+        var unlocked = emblems.unlocked && emblems.unlocked[id];
+        var selected = emblems.selectedEmblemId === id;
+        dom.cosmeticsContent.appendChild(createInfoButton("upgrade-card cosmetic-card" + (selected ? " is-selected" : ""), item.name, unlocked ? item.description : (item.unlockCondition || "조건을 만족하면 해금됩니다."), unlocked ? "해금됨" : "잠김", selected ? "선택됨" : unlocked ? "선택" : "잠김", !unlocked || selected, function () {
+          if (State.selectEmblem && State.selectEmblem(item.id)) {
+            playSound("confirm");
+            cosmeticsSignature = "";
+            sync(State.getRunState());
+          }
+        }, unlocked ? item.iconId : "locked"));
+      });
     }
     cosmeticsSignature = signature;
+  }
+
+  function getEquipmentItem(kind, id) {
+    return State.getEquipmentById ? State.getEquipmentById(kind, id) : null;
+  }
+
+  function getOwnedCount(save, kind, id) {
+    var equipment = save.equipment || {};
+    var map = kind === "core" ? equipment.ownedCores : kind === "board" ? equipment.ownedBoards : equipment.ownedChips;
+    return Math.max(0, Math.floor(map && map[id] || 0));
+  }
+
+  function gradeName(grade) {
+    return Data.EQUIPMENT_GRADES && Data.EQUIPMENT_GRADES[grade] ? Data.EQUIPMENT_GRADES[grade].name : grade;
+  }
+
+  function appendEquipmentCard(container, kind, item, owned, selected, equippedSlot) {
+    var action = !owned ? "미보유" : selected && kind === "chip" ? "해제" : selected ? "장착 중" : "장착";
+    var disabled = !owned || (selected && kind !== "chip");
+    container.appendChild(createInfoButton("upgrade-card cosmetic-card" + (selected ? " is-selected" : ""), item.name, item.description, gradeName(item.grade), action, disabled, function () {
+      var ok = false;
+      if (kind === "core") {
+        ok = State.equipCore(item.id);
+      } else if (kind === "board") {
+        ok = State.equipBoard(item.id);
+      } else if (equippedSlot) {
+        ok = State.unequipChip(equippedSlot, item.id);
+      } else {
+        ok = State.equipChip("core", item.id) || State.equipChip("board", item.id);
+      }
+      if (ok) {
+        playSound("confirm");
+        equipmentSignature = "";
+        sync(State.getRunState());
+      }
+    }, owned ? item.iconId : "locked"));
+  }
+
+  function renderEquipment(state) {
+    var save = state.persistent;
+    var equipment = save.equipment || {};
+    var preset = equipment.presets && equipment.presets[equipment.selectedPresetId] || {};
+    var signature = JSON.stringify(equipment);
+
+    renderTabs(dom.equipmentTabs, Object.keys(equipment.presets || {}).map(function (id) {
+      return { id: id, label: (equipment.presets[id] && equipment.presets[id].name) || id };
+    }), equipment.selectedPresetId, function (id) {
+      if (State.selectEquipmentPreset(id)) {
+        equipmentSignature = "";
+        renderEquipment(State.getRunState());
+      }
+    });
+
+    renderTabs(dom.equipmentRecommendations, (Data.RECOMMENDATION_ORDER || []).map(function (id) {
+      var rec = Data.RECOMMENDATION_TYPES[id];
+      return { id: id, label: rec ? rec.name.replace(" 추천", "") : id };
+    }), "", function (id) {
+      if (State.recommendEquipment(id)) {
+        playSound("confirm");
+        equipmentSignature = "";
+        renderEquipment(State.getRunState());
+      }
+    });
+
+    if (signature === equipmentSignature) {
+      return;
+    }
+
+    clearChildren(dom.equipmentContent);
+    var core = getEquipmentItem("core", preset.coreId);
+    var board = getEquipmentItem("board", preset.boardId);
+    setText(dom.equipmentSummary, "현재 " + (core ? core.name : "-") + " / " + (board ? board.name : "-") + " / 조각 " + formatInteger(save.research && save.research.abyssFragments));
+
+    (Data.BALL_CORE_ORDER || []).forEach(function (id) {
+      var item = getEquipmentItem("core", id);
+      if (item) {
+        appendEquipmentCard(dom.equipmentContent, "core", item, getOwnedCount(save, "core", id) > 0, preset.coreId === id);
+      }
+    });
+    (Data.BOARD_FRAME_ORDER || []).forEach(function (id) {
+      var item = getEquipmentItem("board", id);
+      if (item) {
+        appendEquipmentCard(dom.equipmentContent, "board", item, getOwnedCount(save, "board", id) > 0, preset.boardId === id);
+      }
+    });
+    (Data.SKILL_CHIP_ORDER || []).forEach(function (id) {
+      var item = getEquipmentItem("chip", id);
+      var coreEquipped = preset.coreChipIds && preset.coreChipIds.indexOf(id) !== -1;
+      var boardEquipped = preset.boardChipIds && preset.boardChipIds.indexOf(id) !== -1;
+      if (item) {
+        appendEquipmentCard(dom.equipmentContent, "chip", item, getOwnedCount(save, "chip", id) > 0, coreEquipped || boardEquipped, coreEquipped ? "core" : boardEquipped ? "board" : "");
+      }
+    });
+    equipmentSignature = signature;
+  }
+
+  function appendResearchResult(result) {
+    var item = getEquipmentItem(result.kind, result.id);
+    dom.researchResults.appendChild(createInfoButton("upgrade-card", result.name, item ? item.description : "", gradeName(result.grade), result.duplicate ? "중복 +" + formatInteger(result.fragments) + " 조각" : "신규", true, null, item ? item.iconId : "relic"));
+  }
+
+  function renderResearch(state) {
+    var save = state.persistent;
+    var research = save.research || {};
+    var signature = save.abyssStones + ":" + JSON.stringify(research);
+    var corePity = research.pity && research.pity.core || {};
+    var boardPity = research.pity && research.pity.board || {};
+    var chipPity = research.pity && research.pity.chip || {};
+
+    if (signature === researchSignature) {
+      return;
+    }
+    setText(dom.researchSummary, "심연석 " + formatInteger(save.abyssStones) + " / 조각 " + formatInteger(research.abyssFragments) +
+      " / 전설 천장 공 " + formatInteger(corePity.legendary) + "/80 보드 " + formatInteger(boardPity.legendary) + "/80 칩 " + formatInteger(chipPity.legendary) + "/80");
+    clearChildren(dom.researchResults);
+    (research.lastResults || []).forEach(appendResearchResult);
+    ["core", "board", "chip"].forEach(function (kind) {
+      var order = kind === "core" ? Data.BALL_CORE_ORDER : kind === "board" ? Data.BOARD_FRAME_ORDER : Data.SKILL_CHIP_ORDER;
+      (order || []).forEach(function (id) {
+        var item = getEquipmentItem(kind, id);
+        var cost = item && Data.EQUIPMENT_CRAFT_COSTS ? Data.EQUIPMENT_CRAFT_COSTS[item.grade] : 0;
+        var owned = getOwnedCount(save, kind, id) > 0;
+        if (!item || !cost || owned) {
+          return;
+        }
+        dom.researchResults.appendChild(createInfoButton("upgrade-card", item.name, item.description, "선택 제작 / " + gradeName(item.grade), "조각 " + formatInteger(cost), research.abyssFragments < cost, function () {
+          if (State.craftEquipment(kind, item.id)) {
+            playSound("confirm");
+            researchSignature = "";
+            sync(State.getRunState());
+          }
+        }, item.iconId));
+      });
+    });
+    researchSignature = signature;
   }
 
   function renderSettings(state) {
@@ -812,6 +1006,12 @@
     dom.soundToggle.checked = settings.soundEnabled !== undefined ? !!settings.soundEnabled : !!settings.sound;
     dom.vibrationToggle.checked = settings.vibrationEnabled !== undefined ? !!settings.vibrationEnabled : !!settings.vibration;
     dom.reducedEffectsToggle.checked = !!settings.reducedEffects;
+    var accessibility = state.persistent.accessibility || Data.STORAGE_DEFAULTS.accessibility;
+    dom.ballSizeSelect.value = accessibility.ballSize || "default";
+    dom.paddleSizeSelect.value = accessibility.paddleSize || "default";
+    dom.touchSensitivitySelect.value = accessibility.touchSensitivity || "default";
+    dom.highContrastToggle.checked = !!accessibility.highContrast;
+    dom.screenShakeToggle.checked = accessibility.screenShake !== false;
   }
 
   function decorateStaticIcons() {
@@ -820,6 +1020,8 @@
     addButtonIcon(dom.modeButton, "mode_standard");
     addButtonIcon(dom.classButton, "class_balanced");
     addButtonIcon(dom.metaButton, "currency_abyss_stone");
+    addButtonIcon(dom.equipmentButton, "equipment");
+    addButtonIcon(dom.researchButton, "research");
     addButtonIcon(dom.achievementButton, "achievement");
     addButtonIcon(dom.recordsButton, "record");
     addButtonIcon(dom.compendiumButton, "compendium");
@@ -837,6 +1039,8 @@
     addButtonIcon(dom.saveExportButton, "record");
     addButtonIcon(dom.saveImportButton, "continue");
     addButtonIcon(dom.saveResetButton, "restart");
+    addButtonIcon(dom.equipmentCloseButton, "continue");
+    addButtonIcon(dom.researchCloseButton, "continue");
     addButtonIcon(dom.gameoverRestartButton, "restart");
     addButtonIcon(dom.gameoverMetaButton, "currency_abyss_stone");
     addButtonIcon(dom.gameoverRecordsButton, "record");
@@ -903,8 +1107,8 @@
   }
 
   function getMissionResultText(state) {
-    var completed = state.completedStageMissions ? state.completedStageMissions.length : 0;
-    var failed = state.failedStageMissions ? state.failedStageMissions.length : 0;
+    var completed = state.completedStageMissions ? Object.keys(state.completedStageMissions).length : 0;
+    var failed = state.failedStageMissions ? Object.keys(state.failedStageMissions).length : 0;
 
     return "미션 완료 " + formatInteger(completed) + "개 / 실패 " + formatInteger(failed) + "개";
   }
@@ -922,8 +1126,26 @@
     if (summary.rewardStones !== undefined) {
       parts.push("획득 심연석 " + formatInteger(summary.rewardStones));
     }
+    if (Array.isArray(summary.topBuilds) && summary.topBuilds.length) {
+      parts.push("대표 빌드 " + summary.topBuilds.map(function (entry) {
+        var data = Data.BUILD_ARCHETYPES && Data.BUILD_ARCHETYPES[entry.id];
+        return data ? data.name : entry.id;
+      }).join(", "));
+    }
 
     return parts.join(" / ");
+  }
+
+  function getBuildText(state) {
+    var summary = state.runSummary || {};
+
+    if (Array.isArray(summary.topBuilds) && summary.topBuilds.length) {
+      return summary.topBuilds.map(function (entry, index) {
+        var data = Data.BUILD_ARCHETYPES && Data.BUILD_ARCHETYPES[entry.id];
+        return (index === 0 ? "대표 " : "보조 ") + (data ? data.name : entry.id) + " " + formatInteger(entry.score);
+      }).join(" / ");
+    }
+    return getRelicNames(state);
   }
 
   function renderGameover(state) {
@@ -940,7 +1162,7 @@
     setText(dom.gameoverStones, formatInteger(state.earnedAbyssStones));
     setText(dom.gameoverOwnedStones, formatInteger(state.persistent.abyssStones));
     setText(dom.gameoverSummary, getRunSummaryText(state));
-    setText(dom.gameoverBuild, classData.name + " / " + getRelicNames(state));
+    setText(dom.gameoverBuild, classData.name + " / " + getBuildText(state));
     setText(dom.gameoverAchievements, getNewAchievementText(state));
   }
 
@@ -959,7 +1181,7 @@
     setText(dom.runClearOwnedStones, formatInteger(state.persistent.abyssStones));
     setText(dom.runClearCount, formatInteger(state.persistent.runClearCount));
     setText(dom.runClearSummary, getRunSummaryText(state));
-    setText(dom.runClearBuild, classData.name + " / " + getRelicNames(state));
+    setText(dom.runClearBuild, classData.name + " / " + getBuildText(state));
     setText(dom.runClearAchievements, getNewAchievementText(state));
     setText(dom.runClearUpgrades, text);
   }
@@ -979,6 +1201,8 @@
     setHidden(dom.classOverlay, state.mode !== Data.MODES.CLASS_SELECT);
     setHidden(dom.metaOverlay, state.mode !== Data.MODES.META);
     setHidden(dom.achievementOverlay, state.mode !== Data.MODES.ACHIEVEMENTS);
+    setHidden(dom.equipmentOverlay, state.mode !== Data.MODES.EQUIPMENT);
+    setHidden(dom.researchOverlay, state.mode !== Data.MODES.RESEARCH);
     setHidden(dom.recordsOverlay, state.mode !== Data.MODES.RECORDS);
     setHidden(dom.compendiumOverlay, state.mode !== Data.MODES.COMPENDIUM);
     setHidden(dom.cosmeticsOverlay, state.mode !== Data.MODES.COSMETICS);
@@ -1029,6 +1253,16 @@
       renderAchievements(state);
     } else {
       achievementSignature = "";
+    }
+    if (state.mode === Data.MODES.EQUIPMENT) {
+      renderEquipment(state);
+    } else {
+      equipmentSignature = "";
+    }
+    if (state.mode === Data.MODES.RESEARCH) {
+      renderResearch(state);
+    } else {
+      researchSignature = "";
     }
     if (state.mode === Data.MODES.RECORDS) {
       renderRecords(state);
@@ -1253,7 +1487,13 @@
       soundEnabled: sound,
       vibration: vibration,
       vibrationEnabled: vibration,
-      reducedEffects: !!dom.reducedEffectsToggle.checked
+      reducedEffects: !!dom.reducedEffectsToggle.checked,
+      ballSize: dom.ballSizeSelect.value,
+      paddleSize: dom.paddleSizeSelect.value,
+      touchSensitivity: dom.touchSensitivitySelect.value,
+      highContrast: !!dom.highContrastToggle.checked,
+      accessibilityReducedEffects: !!dom.reducedEffectsToggle.checked,
+      screenShake: !!dom.screenShakeToggle.checked
     });
     setText(dom.settingsMessage, "설정을 저장했습니다.");
     sync(State.getRunState());
@@ -1293,6 +1533,18 @@
     resetArmed = false;
     dom.saveDataInput.value = "";
     setText(dom.settingsMessage, "진행도를 초기화했습니다.");
+    sync(State.getRunState());
+  }
+
+  function pullResearch(kind, count) {
+    var result = State.extractEquipment(kind, count);
+    setText(dom.researchSummary, result.message || "");
+    if (result.ok) {
+      playSound("confirm");
+    } else {
+      playSound("error");
+    }
+    researchSignature = "";
     sync(State.getRunState());
   }
 
@@ -1339,12 +1591,16 @@
     var position = getPointerPosition(event);
     var dx = position.x - state.input.pointerStartX;
     var dy = position.y - state.input.pointerStartY;
+    var targetX = position.x;
 
     if (Math.sqrt(dx * dx + dy * dy) > 8) {
       state.input.pointerMoved = true;
     }
 
-    Game.movePaddleTo(position.x, state);
+    if (event.pointerType === "touch") {
+      targetX = state.input.pointerStartX + dx * getTouchSensitivityMultiplier(state);
+    }
+    Game.movePaddleTo(targetX, state);
     event.preventDefault();
   }
 
@@ -1391,6 +1647,8 @@
     dom.modeButton.addEventListener("click", function () { openMenu(Data.MODES.GAME_MODE); });
     dom.classButton.addEventListener("click", function () { openMenu(Data.MODES.CLASS_SELECT); });
     dom.metaButton.addEventListener("click", function () { openMenu(Data.MODES.META); });
+    dom.equipmentButton.addEventListener("click", function () { openMenu(Data.MODES.EQUIPMENT); });
+    dom.researchButton.addEventListener("click", function () { openMenu(Data.MODES.RESEARCH); });
     dom.achievementButton.addEventListener("click", function () { openMenu(Data.MODES.ACHIEVEMENTS); });
     dom.recordsButton.addEventListener("click", function () { openMenu(Data.MODES.RECORDS); });
     dom.compendiumButton.addEventListener("click", function () { openMenu(Data.MODES.COMPENDIUM); });
@@ -1410,6 +1668,8 @@
     dom.classCloseButton.addEventListener("click", closeMenu);
     dom.metaCloseButton.addEventListener("click", closeMenu);
     dom.achievementCloseButton.addEventListener("click", closeMenu);
+    dom.equipmentCloseButton.addEventListener("click", closeMenu);
+    dom.researchCloseButton.addEventListener("click", closeMenu);
     dom.recordsCloseButton.addEventListener("click", closeMenu);
     dom.compendiumCloseButton.addEventListener("click", closeMenu);
     dom.cosmeticsCloseButton.addEventListener("click", closeMenu);
@@ -1417,6 +1677,17 @@
     dom.soundToggle.addEventListener("change", applySettings);
     dom.vibrationToggle.addEventListener("change", applySettings);
     dom.reducedEffectsToggle.addEventListener("change", applySettings);
+    dom.ballSizeSelect.addEventListener("change", applySettings);
+    dom.paddleSizeSelect.addEventListener("change", applySettings);
+    dom.touchSensitivitySelect.addEventListener("change", applySettings);
+    dom.highContrastToggle.addEventListener("change", applySettings);
+    dom.screenShakeToggle.addEventListener("change", applySettings);
+    dom.corePullButton.addEventListener("click", function () { pullResearch("core", 1); });
+    dom.boardPullButton.addEventListener("click", function () { pullResearch("board", 1); });
+    dom.chipPullButton.addEventListener("click", function () { pullResearch("chip", 1); });
+    dom.corePull10Button.addEventListener("click", function () { pullResearch("core", 10); });
+    dom.boardPull10Button.addEventListener("click", function () { pullResearch("board", 10); });
+    dom.chipPull10Button.addEventListener("click", function () { pullResearch("chip", 10); });
     dom.saveExportButton.addEventListener("click", exportSave);
     dom.saveImportButton.addEventListener("click", importSave);
     dom.saveResetButton.addEventListener("click", resetSave);
