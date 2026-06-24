@@ -58,7 +58,45 @@
       });
     }
 
-    if (rules.endless && number > Data.GAME.finalStage) {
+    if (rules.bossRush) {
+      var rushBosses = ["sentinel", "gatekeeper", "mirror_lord", "core", "core"];
+      var rushIndex = Math.max(0, Math.min(rushBosses.length - 1, number - 1));
+      var rushBossId = rushBosses[rushIndex];
+      var rushTemplate = Data.STAGES.filter(function (entry) { return entry.bossId === rushBossId; })[0] || Data.STAGES[4];
+      stage = JSON.parse(JSON.stringify(rushTemplate));
+      stage.id = number;
+      stage.name = "보스 러시 " + number;
+      stage.type = "boss";
+      stage.bossId = rushBossId;
+      stage.pattern = number >= 5 ? ["0000000", "0026200", "0000000"] : ["0000000", "0011100", "0000000"];
+      stage.brickHpMultiplier = 1 + number * 0.08;
+      stage.ballSpeedMultiplier = 1 + number * 0.025;
+      stage.itemDropMultiplier = 0;
+      stage.bossHpMultiplier = number >= 5 ? 1.35 : 1 + number * 0.08;
+      stage.zoneId = number < 2 ? "corridor" : number < 4 ? "rift" : "core";
+      stage.backgroundVariant = 20 + number;
+    } else if (rules.tower) {
+      var towerFloor = number;
+      var bossFloor = towerFloor % Math.max(1, rules.bossEvery || 5) === 0;
+      var towerBosses = ["sentinel", "gatekeeper", "mirror_lord", "core"];
+      var towerScale = Math.floor((towerFloor - 1) / Math.max(1, rules.scalingEvery || 5));
+      var towerZoneIds = ["gate", "corridor", "rift", "core"];
+      var towerZoneId = towerZoneIds[Math.floor((towerFloor - 1) / 4) % towerZoneIds.length];
+
+      stage.name = "심연탑 " + towerFloor + "층";
+      stage.id = towerFloor;
+      stage.zoneId = towerZoneId;
+      stage.type = bossFloor ? "boss" : "normal";
+      stage.bossId = bossFloor ? towerBosses[Math.floor(towerFloor / Math.max(1, rules.bossEvery || 5) - 1) % towerBosses.length] : null;
+      stage.brickHpMultiplier = clamp((stage.brickHpMultiplier || 1) + towerScale * 0.14 + towerFloor * 0.01, 1, 4);
+      stage.ballSpeedMultiplier = clamp((stage.ballSpeedMultiplier || 1) + towerScale * 0.018, 1, 1.25);
+      stage.itemDropMultiplier = clamp((stage.itemDropMultiplier || 1) + towerScale * 0.02, 0.85, 1.4);
+      stage.bossHpMultiplier = 1 + towerScale * 0.16 + (towerFloor % 10 === 0 ? 0.25 : 0);
+      stage.rewardMultiplier = 1 + towerScale * 0.08;
+      stage.backgroundVariant = 30 + towerFloor % 10;
+    }
+
+    if (rules.endless && !rules.tower && number > Data.GAME.finalStage) {
       var scale = Math.floor((number - Data.GAME.finalStage) / Math.max(1, rules.scalingEvery || 5)) + 1;
       var cycle = Math.floor((number - 11) / 5) % 3;
       var endlessZone = cycle === 0 ? "corridor" : cycle === 1 ? "rift" : "core";
@@ -83,7 +121,48 @@
       }
     }
 
+    applyStageMutations(stage, state);
+
     return stage;
+  }
+
+  function getActiveMutationIds(state) {
+    var rules = state ? getGameModeRules(state) : {};
+    var order = Data.MUTATION_ORDER || [];
+
+    if (!state || !order.length || rules.bossRush) {
+      return [];
+    }
+    if (rules.tower) {
+      return [order[(Math.max(1, state.stage || 1) - 1) % order.length]];
+    }
+    if (Array.isArray(state.activeMutationIds) && state.activeMutationIds.length) {
+      return state.activeMutationIds.slice(0, 2);
+    }
+    if (Array.isArray(state.runModifiers && state.runModifiers.activeMutationIds)) {
+      return state.runModifiers.activeMutationIds.slice(0, 2);
+    }
+    return [];
+  }
+
+  function applyStageMutations(stage, state) {
+    var ids = getActiveMutationIds(state);
+
+    stage.mutationIds = ids;
+    ids.forEach(function (id) {
+      var mutation = Data.MUTATIONS && Data.MUTATIONS[id];
+      var modifiers = mutation && mutation.modifiers || {};
+
+      stage.brickHpMultiplier *= modifiers.brickHpMultiplier || 1;
+      stage.ballSpeedMultiplier *= modifiers.ballSpeedMultiplier || 1;
+      stage.itemDropMultiplier *= modifiers.itemDropMultiplier || 1;
+      stage.rewardMultiplier = (stage.rewardMultiplier || 1) * (modifiers.rewardMultiplier || 1);
+      stage.bossHpMultiplier = (stage.bossHpMultiplier || 1) * (modifiers.bossHpMultiplier || 1);
+      if (modifiers.driftingBricks) {
+        stage.driftingBricks = true;
+        stage.driftingBrickLimit = Math.max(stage.driftingBrickLimit || 0, 10);
+      }
+    });
   }
 
   function getBossData(id) {
@@ -198,6 +277,65 @@
     return !!(state.activeEvolutions && state.activeEvolutions[id]);
   }
 
+  function getEquipmentItem(kind, id) {
+    if (State.getEquipmentById) {
+      return State.getEquipmentById(kind, id);
+    }
+    var map = kind === "core" ? Data.BALL_CORES : kind === "board" ? Data.BOARD_FRAMES : Data.SKILL_CHIPS;
+    return map && map[id] ? map[id] : null;
+  }
+
+  function getAppliedEquipment(state) {
+    if (state && state.appliedEquipment) {
+      return state.appliedEquipment;
+    }
+    if (State.getAppliedEquipment) {
+      return State.getAppliedEquipment(state && state.persistent);
+    }
+    return { coreId: "default_ball_core", boardId: "default_board_frame", coreChipIds: [], boardChipIds: [] };
+  }
+
+  function getEquipmentEffectLevel(state, effectId) {
+    var equipment = getAppliedEquipment(state);
+    var total = 0;
+
+    [
+      getEquipmentItem("core", equipment.coreId),
+      getEquipmentItem("board", equipment.boardId)
+    ].forEach(function (item) {
+      if (item && item.effectId === effectId) {
+        total += 1;
+      }
+    });
+    (equipment.coreChipIds || []).forEach(function (id) {
+      var chip = getEquipmentItem("chip", id);
+      if (chip && chip.effectId === effectId) {
+        total += 1;
+      }
+    });
+    (equipment.boardChipIds || []).forEach(function (id) {
+      var chip = getEquipmentItem("chip", id);
+      if (chip && chip.effectId === effectId) {
+        total += 1;
+      }
+    });
+    return total;
+  }
+
+  function getAccessibility(state) {
+    return state && (state.accessibilitySnapshot || (state.persistent && state.persistent.accessibility)) || Data.STORAGE_DEFAULTS.accessibility || {};
+  }
+
+  function getBallRadiusMultiplier(state) {
+    var size = getAccessibility(state).ballSize || "default";
+    return size === "large" ? 1.25 : size === "small" ? 0.9 : 1;
+  }
+
+  function getPaddleAccessibilityMultiplier(state) {
+    var size = getAccessibility(state).paddleSize || "default";
+    return size === "extra_wide" ? 1.18 : size === "wide" ? 1.1 : 1;
+  }
+
   function discover(group, id) {
     if (State.discover) {
       State.discover(group, id);
@@ -283,6 +421,61 @@
     return true;
   }
 
+  function addBuildScore(state, id, amount) {
+    if (!state || !Data.BUILD_ARCHETYPES || !Data.BUILD_ARCHETYPES[id]) {
+      return;
+    }
+    state.buildScores = state.buildScores || {};
+    state.runStats.buildScores = state.runStats.buildScores || {};
+    state.buildScores[id] = Math.max(0, Math.floor(state.buildScores[id] || 0)) + Math.max(1, amount || 1);
+    state.runStats.buildScores[id] = state.buildScores[id];
+  }
+
+  function getTopBuilds(state) {
+    var scores = state && (state.buildScores || (state.runStats && state.runStats.buildScores)) || {};
+    return (Data.BUILD_ARCHETYPE_ORDER || []).map(function (id) {
+      return { id: id, score: Math.max(0, Math.floor(scores[id] || 0)) };
+    }).filter(function (entry) {
+      return entry.score > 0;
+    }).sort(function (a, b) {
+      return b.score - a.score;
+    });
+  }
+
+  function addUpgradeBuildScore(state, upgradeId) {
+    if (upgradeId === "split_start" || upgradeId === "multi_capacity") {
+      addBuildScore(state, "multiball", 2);
+    } else if (upgradeId === "piercing_orb") {
+      addBuildScore(state, "pierce", 2);
+    } else if (upgradeId === "blast_echo" || upgradeId === "break_power") {
+      addBuildScore(state, "explosion", upgradeId === "blast_echo" ? 2 : 1);
+    } else if (upgradeId === "nature_drop" || upgradeId === "duration_boost") {
+      addBuildScore(state, "item", 2);
+    } else if (upgradeId === "paddle_guard" || upgradeId === "life_repair" || upgradeId === "max_life") {
+      addBuildScore(state, "defense", 1);
+    } else if (upgradeId === "slow_time") {
+      addBuildScore(state, "precision", 1);
+    }
+  }
+
+  function addRelicBuildScore(state, relicId) {
+    var map = {
+      twin_core: "multiball",
+      piercing_crystal: "pierce",
+      blast_insignia: "explosion",
+      collector_mark: "item",
+      guardian_field: "defense",
+      boss_breaker: "precision",
+      focused_lens: "precision",
+      portal_resonator: "portal",
+      laser_amplifier: "laser",
+      void_safety_net: "defense"
+    };
+    if (map[relicId]) {
+      addBuildScore(state, map[relicId], 3);
+    }
+  }
+
   function finishStageMission(state) {
     var progress = state.currentStageMission;
     var mission = progress && Data.STAGE_MISSIONS ? Data.STAGE_MISSIONS[progress.id] : null;
@@ -348,7 +541,9 @@
     return getClassData(state).paddleWidthMultiplier *
       (hasRelic(state, "giant_grip") ? 1.15 : 1) *
       (1 + getMetaLevel(state, "paddleWidth") * 0.03) *
-      (1 + getUpgradeLevel(state, "paddle_guard") * 0.12);
+      (1 + getUpgradeLevel(state, "paddle_guard") * 0.12) *
+      (1 + getEquipmentEffectLevel(state, "lowLifePaddleBonus") * (state.lives <= 1 ? 0.08 : 0)) *
+      getPaddleAccessibilityMultiplier(state);
   }
 
   function getMaxBalls(state) {
@@ -358,7 +553,8 @@
   function getStartBallCount(state) {
     var relicBonus = hasRelic(state, "twin_core") ? 1 : 0;
     var evolutionBonus = hasEvolution(state, "split_storm") ? 1 : 0;
-    return clamp(1 + getUpgradeLevel(state, "split_start") + relicBonus + evolutionBonus, 1, getMaxBalls(state));
+    var coreBonus = getEquipmentEffectLevel(state, "splitOrbBonus") > 0 && random(state) < 0.1 ? 1 : 0;
+    return clamp(1 + getUpgradeLevel(state, "split_start") + relicBonus + evolutionBonus + coreBonus, 1, getMaxBalls(state));
   }
 
   function getBrickDamage(state) {
@@ -369,11 +565,12 @@
       Math.max(0, counters.bumperDamageStacks || 0) +
       (isFocusedLensActive(state) ? 1 : 0) +
       (hasEvolution(state, "piercing_nature") ? 1 : 0) +
-      (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 2 : 0);
+      (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 2 : 0) +
+      (getEquipmentEffectLevel(state, "firstEvolutionDamageBonus") > 0 && Object.keys(state.activeEvolutions || {}).length > 0 ? 1 : 0);
   }
 
   function getPierceCount(state) {
-    return getUpgradeLevel(state, "piercing_orb") + (hasRelic(state, "piercing_crystal") ? 1 : 0) + (hasEvolution(state, "piercing_nature") ? 1 : 0);
+    return getUpgradeLevel(state, "piercing_orb") + (hasRelic(state, "piercing_crystal") ? 1 : 0) + (hasEvolution(state, "piercing_nature") ? 1 : 0) + (getEquipmentEffectLevel(state, "pierceScoreBonus") > 0 ? 0 : 0);
   }
 
   function getScoreMultiplier(state) {
@@ -387,12 +584,13 @@
       (hasRelic(state, "precision_tuner") && getClassData(state).id === "tuner" ? 1.2 : 1) *
       (isFocusedLensActive(state) ? 1.3 : 1) *
       (hasEvolution(state, "split_storm") && activeBallCount(state) >= 3 ? 1.2 : 1) *
-      (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 1.5 : 1);
+      (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 1.5 : 1) *
+      (1 + getEquipmentEffectLevel(state, "precisionScoreBonus") * 0.04 + getEquipmentEffectLevel(state, "portalScoreBonus") * 0.04 + getEquipmentEffectLevel(state, "pierceScoreBonus") * 0.03 + getEquipmentEffectLevel(state, "explosionScoreBonus") * 0.03);
   }
 
   function getDropMultiplier(state) {
     var rules = getGameModeRules(state);
-    return (1 + getUpgradeLevel(state, "nature_drop") * 0.2) * (getClassData(state).itemDropMultiplier || 1) * (rules.itemDropMultiplier || 1);
+    return (1 + getUpgradeLevel(state, "nature_drop") * 0.2 + getEquipmentEffectLevel(state, "itemDropBonus") * 0.04) * (getClassData(state).itemDropMultiplier || 1) * (rules.itemDropMultiplier || 1);
   }
 
   function getDurationMultiplier(state) {
@@ -400,6 +598,7 @@
     return (1 + getUpgradeLevel(state, "duration_boost") * 0.25) *
       (getClassData(state).itemDurationMultiplier || 1) *
       (hasRelic(state, "alchemist_star") ? 1.15 : 1) *
+      (1 + getEquipmentEffectLevel(state, "itemDurationBonus") * 0.05 + getEquipmentEffectLevel(state, "magnetDurationBonus") * 0.04) *
       (rules.itemDurationMultiplier || 1);
   }
 
@@ -411,7 +610,7 @@
       return clamp(relicBonus, 0, 0.8);
     }
 
-    return clamp(0.2 + (level - 1) * 0.15 + relicBonus, 0, 0.8);
+    return clamp(0.2 + (level - 1) * 0.15 + relicBonus + getEquipmentEffectLevel(state, "blastRadiusBonus") * 0.04, 0, 0.8);
   }
 
   function getCurrentBallSpeed(state) {
@@ -496,6 +695,9 @@
   }
 
   function triggerScreenShake(state, magnitude, duration) {
+    if (getAccessibility(state).screenShake === false) {
+      return;
+    }
     state.effects.screenShake = {
       time: duration,
       duration: duration,
@@ -621,8 +823,8 @@
     if (spawnedByBoss && typeId === "wall") {
       typeId = "strong";
     }
-    if (!spawnedByBoss && rules.driftingBricks && typeId !== "wall") {
-      var driftLimit = rules.driftingBrickLimit || 8;
+    if (!spawnedByBoss && (rules.driftingBricks || stage.driftingBricks) && typeId !== "wall") {
+      var driftLimit = stage.driftingBrickLimit || rules.driftingBrickLimit || 8;
       state.runModifiers.driftingCreated = state.runModifiers.driftingCreated || 0;
       if (state.runModifiers.driftingCreated < driftLimit && (row + col) % 3 === 0) {
         state.runModifiers.driftingCreated++;
@@ -702,7 +904,8 @@
   function createBoss(state) {
     var stage = getStageData(state);
     var bossData = getBossData(stage.bossId);
-    var endlessScale = getGameModeRules(state).endless ? Math.max(0, Math.floor((state.stage - Data.GAME.finalStage) / 5)) : 0;
+    var endlessScale = getGameModeRules(state).endless && !getGameModeRules(state).tower ? Math.max(0, Math.floor((state.stage - Data.GAME.finalStage) / 5)) : 0;
+    var hpMultiplier = stage.bossHpMultiplier || 1;
 
     if (!bossData) {
       state.boss = null;
@@ -717,8 +920,8 @@
       width: bossData.width,
       height: bossData.height,
       vx: bossData.moveSpeed * (1 + endlessScale * 0.06),
-      hp: Math.round(bossData.maxHp * (1 + endlessScale * 0.18)),
-      maxHp: Math.round(bossData.maxHp * (1 + endlessScale * 0.18)),
+      hp: Math.round(bossData.maxHp * (1 + endlessScale * 0.18) * hpMultiplier),
+      maxHp: Math.round(bossData.maxHp * (1 + endlessScale * 0.18) * hpMultiplier),
       alive: true,
       phase: 0,
       rewardGranted: false,
@@ -773,7 +976,9 @@
   }
 
   function createAttachedBall(state, offsetX) {
-    return State.createAttachedBall(state.counters.nextBallId++, state.paddle, getPierceCount(state), offsetX || 0);
+    var ball = State.createAttachedBall(state.counters.nextBallId++, state.paddle, getPierceCount(state), offsetX || 0);
+    ball.radius = Data.BALL.radius * getBallRadiusMultiplier(state);
+    return ball;
   }
 
   function resetBallToPaddle(state) {
@@ -816,6 +1021,7 @@
     runState.gimmickEffects = [];
     runState.gimmickTimers = {};
     runState.evolutionStageFlags = {};
+    runState.equipmentStageFlags = {};
     if (runState.evolutionCounters) {
       runState.evolutionCounters.precisionPrimed = 0;
       runState.evolutionCounters.precisionScore = 1;
@@ -827,6 +1033,10 @@
     runState.upgrades.selectionLocked = false;
     runState.stageStartedAt = runState.time.elapsed || 0;
     runState.runModifiers.driftingCreated = 0;
+    if (getGameModeRules(runState).tower) {
+      runState.activeMutationIds = pickRunMutations(runState, getGameModeRules(runState));
+      runState.runModifiers.activeMutationIds = runState.activeMutationIds.slice();
+    }
     buildStage(runState);
     createBoss(runState);
     createStageGimmicks(runState);
@@ -847,6 +1057,27 @@
     runState.flags.needsHudUpdate = true;
     State.saveActiveRun(runState, Data.MODES.READY);
     return runState;
+  }
+
+  function pickRunMutations(state, rules) {
+    var order = Data.MUTATION_ORDER || [];
+    var selected = [];
+
+    if (!order.length || rules.bossRush) {
+      return selected;
+    }
+    if (rules.tower) {
+      return [order[(Math.max(1, state.stage || 1) - 1) % order.length]];
+    }
+    if (state.gameModeId === "standard" || state.gameModeId === "endless") {
+      selected.push(order[(state.persistent.totalRuns || 0) % order.length]);
+    }
+    if (state.gameModeId === "fracture_abyss") {
+      selected.push("fracture_spread");
+    }
+    return selected.filter(function (id, index) {
+      return id && selected.indexOf(id) === index;
+    }).slice(0, 2);
   }
 
   function startRun(state) {
@@ -882,6 +1113,8 @@
     runState.runStats.precisionHits = 0;
     runState.runStats.explosionChains = 0;
     runState.runStats.bottomBarrierSaves = 0;
+    runState.runStats.buildScores = {};
+    runState.buildScores = {};
     runState.highestStageReached = Data.GAME.startingStage;
     runState.bossesDefeated = 0;
     runState.earnedAbyssStones = 0;
@@ -902,6 +1135,12 @@
     };
     runState.evolutionStageFlags = {};
     runState.runModifiers = {};
+    runState.appliedEquipment = State.getAppliedEquipment ? State.getAppliedEquipment(runState.persistent) : { coreId: "default_ball_core", boardId: "default_board_frame", coreChipIds: [], boardChipIds: [] };
+    runState.accessibilitySnapshot = JSON.parse(JSON.stringify((runState.persistent && runState.persistent.accessibility) || Data.STORAGE_DEFAULTS.accessibility || {}));
+    runState.equipmentStageFlags = {};
+    runState.endgameMode = rules.tower ? "abyss_tower" : rules.bossRush ? "boss_rush" : "";
+    runState.activeMutationIds = pickRunMutations(runState, rules);
+    runState.runModifiers.activeMutationIds = runState.activeMutationIds.slice();
     runState.currentStageMission = null;
     runState.stageMissionProgress = {};
     runState.completedStageMissions = {};
@@ -1141,6 +1380,7 @@
       }
       state.runStats.bottomBarrierSaves = (state.runStats.bottomBarrierSaves || 0) + 1;
       recordMissionEvent(state, "bottom_barrier_save", 1);
+      addBuildScore(state, "defense", 2);
       addLineEffect(state, 12, getHeight(state) - 8, getWidth(state) - 12, getHeight(state) - 8, "#9ee6a8");
     }
 
@@ -1244,6 +1484,7 @@
     }
     if (gimmick.type === "bumper" || gimmick.type === "spinner") {
       recordMissionEvent(state, "bumper_hit", 1);
+      addBuildScore(state, "portal", 1);
     }
     addRingEffect(state, cx, cy, radius + 6, gimmick.type === "spinner" ? "#f2c94c" : "#65c8ff");
     return true;
@@ -1261,6 +1502,7 @@
     ball.prevX = ball.x;
     ball.prevY = ball.y;
     state.runModifiers.portalPrimedForMission = 3;
+    addBuildScore(state, "portal", 1);
     if (hasRelic(state, "portal_resonator")) {
       state.evolutionCounters = state.evolutionCounters || {};
       state.evolutionCounters.portalPrimed = Math.max(state.evolutionCounters.portalPrimed || 0, hasEvolution(state, "dimensional_refraction") ? 2 : 1);
@@ -1290,6 +1532,8 @@
     separateBall(ball, rect, collision);
     normalizeBallVelocity(state, ball);
     recordMissionEvent(state, "precision_hit", 1);
+    state.runStats.precisionHits = (state.runStats.precisionHits || 0) + 1;
+    addBuildScore(state, "precision", 1);
     addLineEffect(state, rect.x, rect.y + rect.height / 2, rect.x + rect.width, rect.y + rect.height / 2, "#d8e7ff");
     return true;
   }
@@ -1417,6 +1661,12 @@
 
     var damage = Math.max(1, Math.floor(amount));
 
+    if ((source === "direct" || source === "laser") && getEquipmentEffectLevel(state, "firstBrickDamageBonus") > 0 && !(state.equipmentStageFlags && state.equipmentStageFlags.firstBrickHitUsed)) {
+      damage += 1;
+      state.equipmentStageFlags = state.equipmentStageFlags || {};
+      state.equipmentStageFlags.firstBrickHitUsed = true;
+    }
+
     if (brick.type === "shielded" && brick.shieldActive) {
       if (source === "explosion") {
         damage = Math.max(1, Math.floor(damage * 0.5));
@@ -1463,14 +1713,17 @@
       if (source === "laser") {
         state.runStats.laserBreaks = (state.runStats.laserBreaks || 0) + 1;
         recordMissionEvent(state, "laser_break", 1);
+        addBuildScore(state, "laser", 1);
       }
       if (source === "explosion" || source === "laserSplash") {
         state.runStats.explosionChains = (state.runStats.explosionChains || 0) + 1;
         recordMissionEvent(state, "explosion_chain", 1);
+        addBuildScore(state, "explosion", 1);
       }
       if ((state.runModifiers.portalPrimedForMission || 0) > 0) {
         state.runModifiers.portalPrimedForMission -= 1;
         recordMissionEvent(state, "portal_break", 1);
+        addBuildScore(state, "portal", 1);
       }
       triggerAchievement(state, "first_brick");
       awardScore(state, brick.score, brick.x + brick.width / 2, brick.y + brick.height / 2);
@@ -1622,6 +1875,9 @@
     var reduction = boss.shieldActive ? bossData.damageReduction : 0;
     var damageMultiplier = (1 + getMetaLevel(state, "bossDamage") * 0.05) * (hasRelic(state, "boss_breaker") ? 1.5 : 1);
     var weakHit = isBossWeakHit(state, x);
+    if (weakHit) {
+      damageMultiplier *= 1 + getEquipmentEffectLevel(state, "bossWeaknessDamageBonus") * 0.08;
+    }
     var sourceMultiplier = typeof extraMultiplier === "number" && isFinite(extraMultiplier) ? extraMultiplier : 1;
     var damage = Math.max(1, Math.floor(amount * damageMultiplier * (weakHit ? 1.75 : 1) * (1 - reduction) * sourceMultiplier));
 
@@ -1632,6 +1888,7 @@
       boss.lastWeakHitTime = state.time.elapsed || 0;
       state.runStats.weakHits = (state.runStats.weakHits || 0) + 1;
       recordMissionEvent(state, "boss_weak_hit", 1);
+      addBuildScore(state, "precision", 1);
     }
     addFloatingText(state, x, y, (weakHit ? "약점 -" : "-") + damage, weakHit ? "#f2c94c" : (boss.shieldActive ? "#65c8ff" : "#ffffff"));
     addParticles(state, x, y, weakHit ? "#f2c94c" : (boss.shieldActive ? "#65c8ff" : "#e65f4b"), weakHit ? 12 : 8);
@@ -1753,8 +2010,8 @@
       state.activeEffects.laserCooldown = 0;
       addFloatingText(state, item.x + item.width / 2, item.y, "레이저", "#ff8da1");
     } else if (item.type === "bottom_barrier") {
-      state.activeEffects.bottomBarrierTimeRemaining = getItemDefinition("bottom_barrier").duration * getDurationMultiplier(state) * durationScale;
-      state.activeEffects.bottomBarrierDurability = Math.max(state.activeEffects.bottomBarrierDurability || 0, (getItemDefinition("bottom_barrier").value || 3) + (hasRelic(state, "void_safety_net") ? 2 : 0));
+      state.activeEffects.bottomBarrierTimeRemaining = getItemDefinition("bottom_barrier").duration * getDurationMultiplier(state) * durationScale + getEquipmentEffectLevel(state, "barrierDurationBonus");
+      state.activeEffects.bottomBarrierDurability = Math.max(state.activeEffects.bottomBarrierDurability || 0, (getItemDefinition("bottom_barrier").value || 3) + (hasRelic(state, "void_safety_net") ? 2 : 0) + getEquipmentEffectLevel(state, "barrierDurabilityBonus"));
       addFloatingText(state, item.x + item.width / 2, item.y, "보호막", "#9ee6a8");
     }
 
@@ -1764,6 +2021,14 @@
       state.runStats.itemCounts[item.type] = (state.runStats.itemCounts[item.type] || 0) + 1;
       discover("items", item.type);
       recordMissionEvent(state, "item_collected", 1);
+      addBuildScore(state, "item", 1);
+      if (item.type === "multi_ball") {
+        addBuildScore(state, "multiball", 3);
+      } else if (item.type === "laser_paddle") {
+        addBuildScore(state, "laser", 3);
+      } else if (item.type === "bottom_barrier") {
+        addBuildScore(state, "defense", 2);
+      }
       emitFeedback("item", 10);
     }
     if (state.evolutionCounters && !item.virtual) {
@@ -1915,7 +2180,7 @@
       state.activeEffects.laserCooldown = Math.max(0, (state.activeEffects.laserCooldown || 0) - dt);
       if (state.activeEffects.laserCooldown === 0) {
         firePaddleLaser(state);
-        state.activeEffects.laserCooldown = getItemDefinition("laser_paddle").value || 0.4;
+        state.activeEffects.laserCooldown = Math.max(0.22, (getItemDefinition("laser_paddle").value || 0.4) * (1 - getEquipmentEffectLevel(state, "laserCooldownBonus") * 0.05));
       }
     }
 
@@ -2201,7 +2466,9 @@
   }
 
   function updateDriftingBricks(state) {
-    if (!getGameModeRules(state).driftingBricks) {
+    var stage = getStageData(state);
+
+    if (!getGameModeRules(state).driftingBricks && !stage.driftingBricks) {
       return;
     }
 
@@ -2288,6 +2555,38 @@
       }
     }
 
+    save.endgame = save.endgame || { abyssTowerUnlocked: false, bossRushUnlocked: false, towerBestFloor: 0, bossRushBestStage: 0, bossRushBestTime: null };
+    save.records.endgame = save.records.endgame || { towerBestFloor: 0, bossRushBestStage: 0, bossRushBestTime: 0, mutationClears: 0 };
+    if (modeId === "abyss_tower") {
+      save.endgame.towerBestFloor = Math.max(save.endgame.towerBestFloor || 0, state.highestStageReached || 1);
+      save.records.endgame.towerBestFloor = Math.max(save.records.endgame.towerBestFloor || 0, save.endgame.towerBestFloor || 0);
+    }
+    if (modeId === "boss_rush") {
+      save.endgame.bossRushBestStage = Math.max(save.endgame.bossRushBestStage || 0, state.highestStageReached || 1);
+      save.records.endgame.bossRushBestStage = Math.max(save.records.endgame.bossRushBestStage || 0, save.endgame.bossRushBestStage || 0);
+      if (runClear && (!save.endgame.bossRushBestTime || elapsed < save.endgame.bossRushBestTime)) {
+        save.endgame.bossRushBestTime = elapsed;
+        save.records.endgame.bossRushBestTime = elapsed;
+      }
+    }
+    if (runClear && state.activeMutationIds && state.activeMutationIds.length) {
+      save.mutations = save.mutations || { clearedCounts: {}, totalClears: 0 };
+      state.activeMutationIds.forEach(function (id) {
+        save.mutations.clearedCounts[id] = Math.max(0, save.mutations.clearedCounts[id] || 0) + 1;
+        save.mutations.totalClears += 1;
+      });
+      save.records.endgame.mutationClears = Math.max(save.records.endgame.mutationClears || 0, save.mutations.totalClears || 0);
+    }
+
+    save.records.builds = save.records.builds || {};
+    save.buildStats = save.buildStats || { bestScores: {}, discoveredArchetypes: {} };
+    getTopBuilds(state).forEach(function (entry) {
+      save.records.builds[entry.id] = save.records.builds[entry.id] || { bestScore: 0 };
+      save.records.builds[entry.id].bestScore = Math.max(save.records.builds[entry.id].bestScore || 0, entry.score);
+      save.buildStats.bestScores[entry.id] = Math.max(save.buildStats.bestScores[entry.id] || 0, entry.score);
+      save.buildStats.discoveredArchetypes[entry.id] = true;
+    });
+
     state.persistent = State.savePersistent(save);
   }
 
@@ -2309,6 +2608,12 @@
     }
     if (state.gameModeId === "endless" && (state.highestStageReached || 1) >= 20) {
       triggerAchievement(state, "endless_20");
+    }
+    if (state.gameModeId === "abyss_tower" && (state.highestStageReached || 1) >= 10) {
+      triggerAchievement(state, "tower_floor_10");
+    }
+    if (runClear && state.gameModeId === "boss_rush") {
+      triggerAchievement(state, "boss_rush_clear");
     }
     if (runClear && state.gameModeId === "standard") {
       triggerAchievement(state, "standard_clear");
@@ -2347,7 +2652,7 @@
       return 0;
     }
 
-    return Math.max(1, Math.floor(reward * getGameModeData(state).stoneMultiplier));
+    return Math.max(1, Math.floor(reward * getGameModeData(state).stoneMultiplier * (getStageData(state).rewardMultiplier || 1)));
   }
 
   function grantDailyRewards(state, runClear) {
@@ -2413,6 +2718,7 @@
       maxActiveBalls: state.runStats.maxActiveBalls || 1,
       runElapsedTime: state.runElapsedTime || 0,
       runClear: !!runClear,
+      topBuilds: getTopBuilds(state).slice(0, 2),
       bestScoreUpdated: state.score >= (state.persistent.bestScore || 0),
       bestStageUpdated: (state.highestStageReached || 1) >= (state.persistent.highestStage || 1)
     };
@@ -2442,7 +2748,81 @@
     if ((state.runStats.precisionHits || 0) >= 30) {
       State.unlockCosmetic("ball", "precision_orb");
     }
+    if (state.gameModeId === "abyss_tower") {
+      if ((state.highestStageReached || 1) >= 5) {
+        State.unlockCosmetic("ball", "tower_orb");
+      }
+      if ((state.highestStageReached || 1) >= 10) {
+        State.unlockCosmetic("paddle", "tower_paddle");
+      }
+    }
+    if (state.gameModeId === "boss_rush") {
+      if ((state.highestStageReached || 1) >= 3) {
+        State.unlockCosmetic("ball", "boss_fragment");
+      }
+      if (runClear) {
+        State.unlockCosmetic("ball", "core_orb");
+      }
+    }
+    if (state.persistent && state.persistent.mutations && (state.persistent.mutations.totalClears || 0) >= 10) {
+      State.unlockCosmetic("ball", "fracture_orb");
+    }
+    if ((state.runStats.weakHits || 0) >= 25) {
+      State.unlockCosmetic("paddle", "sentinel_paddle");
+    }
+    if ((state.runStats.precisionHits || 0) >= 25) {
+      State.unlockCosmetic("paddle", "mirror_paddle");
+    }
+    if (state.gameModeId === "standard" && (state.persistent.runClearCount || 0) >= 3) {
+      State.unlockCosmetic("paddle", "core_paddle");
+    }
     state.persistent = State.getRunState().persistent;
+  }
+
+  function grantClassMasteryExp(state, runClear) {
+    var save = state.persistent;
+    var classId = state.selectedClassId || "balanced";
+    var mastery = save.classMastery && save.classMastery[classId];
+    var gained = 10 + Math.max(0, state.runStats.bossesDefeated || 0) * 6 + Math.max(0, state.runStats.missionCompleted || 0) * 2;
+
+    if (!mastery) {
+      return;
+    }
+    if (runClear) {
+      gained += state.gameModeId === "boss_rush" ? 30 : state.gameModeId === "abyss_tower" ? 20 : 25;
+    }
+    if (state.gameModeId === "abyss_tower") {
+      gained += Math.floor((state.highestStageReached || 1) / 2);
+    }
+    mastery.exp += gained;
+    while (mastery.level < 10 && mastery.exp >= mastery.level * 100) {
+      mastery.exp -= mastery.level * 100;
+      mastery.level += 1;
+    }
+    if (mastery.level >= 5) {
+      triggerAchievement(state, "class_mastery_5");
+      if (State.unlockEmblem) {
+        State.unlockEmblem("class_master");
+      }
+    }
+  }
+
+  function unlockEndgameRewards(state, runClear) {
+    if (!State.unlockEmblem) {
+      return;
+    }
+    if (state.gameModeId === "abyss_tower" && (state.highestStageReached || 1) >= 20) {
+      State.unlockEmblem("tower_breaker");
+    }
+    if (state.gameModeId === "boss_rush" && (state.highestStageReached || 1) >= 3) {
+      State.unlockEmblem("boss_hunter");
+    }
+    if (state.persistent && state.persistent.mutations && (state.persistent.mutations.totalClears || 0) >= 10) {
+      State.unlockEmblem("mutation_adapt");
+    }
+    if (runClear && state.gameModeId === "boss_rush") {
+      State.unlockEmblem("boss_hunter");
+    }
   }
 
   function grantRunReward(state, runClear) {
@@ -2468,12 +2848,17 @@
       state.persistent.totalAbyssStonesEarned = Math.max(0, Math.floor(state.persistent.totalAbyssStonesEarned || 0)) + reward;
     }
 
-    unlockCosmeticRewards(state, !!runClear);
-    state.persistent = State.savePersistent(state.persistent);
     updateRecords(state, !!runClear);
+    unlockCosmeticRewards(state, !!runClear);
+    grantClassMasteryExp(state, !!runClear);
+    unlockEndgameRewards(state, !!runClear);
+    state.persistent = State.savePersistent(state.persistent);
     checkRunAchievements(state, !!runClear);
 
     if (runClear && state.gameModeId === "standard") {
+      state.persistent.endgame = state.persistent.endgame || {};
+      state.persistent.endgame.abyssTowerUnlocked = true;
+      state.persistent.endgame.bossRushUnlocked = true;
       State.unlockAllModes();
     }
 
@@ -2882,6 +3267,16 @@
     runState.evolutionCounters.precisionScore = runState.evolutionCounters.precisionScore || 1;
     runState.evolutionCounters.portalScore = runState.evolutionCounters.portalScore || 1;
     runState.runModifiers = JSON.parse(JSON.stringify(checkpoint.runModifiers || {}));
+    runState.endgameMode = checkpoint.endgameMode || "";
+    runState.activeMutationIds = Array.isArray(checkpoint.activeMutationIds) ? checkpoint.activeMutationIds.slice(0, 2) : [];
+    runState.buildScores = JSON.parse(JSON.stringify(checkpoint.buildScores || (checkpoint.runStats && checkpoint.runStats.buildScores) || {}));
+    runState.appliedEquipment = {
+      coreId: checkpoint.appliedCoreId || "default_ball_core",
+      boardId: checkpoint.appliedBoardId || "default_board_frame",
+      coreChipIds: Array.isArray(checkpoint.appliedCoreChipIds) ? checkpoint.appliedCoreChipIds.slice(0, 3) : [],
+      boardChipIds: Array.isArray(checkpoint.appliedBoardChipIds) ? checkpoint.appliedBoardChipIds.slice(0, 3) : []
+    };
+    runState.accessibilitySnapshot = JSON.parse(JSON.stringify(checkpoint.accessibilitySnapshot || (runState.persistent && runState.persistent.accessibility) || Data.STORAGE_DEFAULTS.accessibility || {}));
     runState.currentStageMission = JSON.parse(JSON.stringify(checkpoint.currentStageMission || null));
     runState.stageMissionProgress = JSON.parse(JSON.stringify(checkpoint.stageMissionProgress || {}));
     runState.completedStageMissions = JSON.parse(JSON.stringify(checkpoint.completedStageMissions || {}));
@@ -2945,6 +3340,7 @@
     discover("relics", relicId);
     runState.selectedRelicId = runState.selectedRelicIds[0] || relicId;
     runState.runStats.relicsSelected = (runState.runStats.relicsSelected || 0) + 1;
+    addRelicBuildScore(runState, relicId);
     runState.relicChoices = [];
     checkEvolutions(runState);
     runState.stage += 1;
@@ -2994,6 +3390,7 @@
     runState.upgrades.chosen.push(upgrade.name + " 레벨 " + runState.upgrades.levels[upgradeId]);
     runState.upgrades.pending = [];
     runState.runStats.upgradesSelected = (runState.runStats.upgradesSelected || 0) + 1;
+    addUpgradeBuildScore(runState, upgradeId);
     applyUpgradeEffect(runState, upgrade);
     checkEvolutions(runState);
     startNextStage(runState);
