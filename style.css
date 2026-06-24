@@ -405,7 +405,7 @@ button:focus-visible {
 
 .tab-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 6px;
 }
 
@@ -504,8 +504,7 @@ button:focus-visible {
   color: var(--text);
   font-size: 15px;
   line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .upgrade-card-category {
@@ -594,6 +593,35 @@ button:focus-visible {
   font-weight: 900;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 380px) {
+  .overlay {
+    padding-inline: 10px;
+  }
+
+  .overlay-panel {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .lobby-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-actions button:first-child {
+    grid-column: auto;
+  }
+
+  .result-list-three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-actions button {
+    padding-inline: 8px;
+    font-size: 12px;
+  }
 }
 
 .setting-row {
@@ -622,6 +650,23 @@ button:focus-visible {
   width: 22px;
   height: 22px;
   accent-color: var(--green);
+}
+
+.setting-row select {
+  min-width: 104px;
+  min-height: 34px;
+  border: 1px solid rgba(160, 215, 224, 0.27);
+  border-radius: 6px;
+  background: #0b1419;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+#equipment-summary,
+#research-summary {
+  overflow-wrap: anywhere;
 }
 
 #save-data-input {
