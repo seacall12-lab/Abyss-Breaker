@@ -88,10 +88,11 @@
     var stage = Game.getStageData ? Game.getStageData(state) : null;
     var variant = stage ? stage.backgroundVariant : 0;
     var zoneId = state.zoneId || (stage && stage.zoneId);
+    var highContrast = state.persistent && state.persistent.accessibility && state.persistent.accessibility.highContrast;
     var gradient = ctx.createLinearGradient(0, 0, 0, height);
 
-    gradient.addColorStop(0, zoneId === "core" ? "#1b1026" : zoneId === "rift" ? "#241417" : zoneId === "corridor" ? "#101b2b" : (variant % 3 === 0 ? "#071e25" : "#101b2b"));
-    gradient.addColorStop(0.42, "#0b1218");
+    gradient.addColorStop(0, highContrast ? "#000000" : zoneId === "core" ? "#1b1026" : zoneId === "rift" ? "#241417" : zoneId === "corridor" ? "#101b2b" : (variant % 3 === 0 ? "#071e25" : "#101b2b"));
+    gradient.addColorStop(0.42, highContrast ? "#061014" : "#0b1218");
     gradient.addColorStop(1, "#07090d");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
@@ -165,6 +166,18 @@
     } else if (skinId === "tuner_paddle") {
       gradient.addColorStop(0, "#f7fbff");
       gradient.addColorStop(1, "#b06cff");
+    } else if (skinId === "tower_paddle") {
+      gradient.addColorStop(0, "#f3f7ff");
+      gradient.addColorStop(1, "#7b7ff0");
+    } else if (skinId === "sentinel_paddle" || skinId === "gatekeeper_paddle") {
+      gradient.addColorStop(0, "#fff1b8");
+      gradient.addColorStop(1, "#f2c94c");
+    } else if (skinId === "mirror_paddle") {
+      gradient.addColorStop(0, "#f7fbff");
+      gradient.addColorStop(1, "#65c8ff");
+    } else if (skinId === "core_paddle") {
+      gradient.addColorStop(0, "#ffd5cb");
+      gradient.addColorStop(1, "#b06cff");
     } else if (skinId === "abyss_paddle") {
       gradient.addColorStop(0, "#d8e7ff");
       gradient.addColorStop(1, "#f2c94c");
@@ -180,6 +193,15 @@
     roundedRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, 7);
     ctx.fillStyle = gradient;
     ctx.fill();
+    if (state.persistent && state.persistent.emblems && state.persistent.emblems.selectedEmblemId !== "default_emblem") {
+      ctx.fillStyle = "rgba(7, 16, 22, 0.55)";
+      ctx.beginPath();
+      ctx.arc(paddle.x + paddle.width / 2, paddle.y + paddle.height / 2, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#f2c94c";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -259,7 +281,7 @@
     ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
     var state = State.getRunState();
     var skinId = state.selectedBallSkinId || (state.persistent && state.persistent.cosmetics && state.persistent.cosmetics.selectedBallSkinId) || "default_ball";
-    ctx.fillStyle = skinId === "split_orb" ? "#f2c94c" : skinId === "precision_orb" ? "#b06cff" : skinId === "abyss_ball" ? "#9ee6a8" : (ball.attached ? "#dcefff" : "#ffffff");
+    ctx.fillStyle = skinId === "tower_orb" ? "#7b7ff0" : skinId === "boss_fragment" ? "#e65f4b" : skinId === "core_orb" ? "#b06cff" : skinId === "fracture_orb" ? "#31c487" : skinId === "split_orb" ? "#f2c94c" : skinId === "precision_orb" ? "#b06cff" : skinId === "abyss_ball" ? "#9ee6a8" : (ball.attached ? "#dcefff" : "#ffffff");
     ctx.fill();
     ctx.strokeStyle = skinId === "default_ball" ? "#65c8ff" : "#ffffff";
     ctx.lineWidth = Data.BALL.strokeWidth || 1.5;
@@ -496,7 +518,8 @@
   }
 
   function getShake(state) {
-    if (state.persistent && state.persistent.settings && state.persistent.settings.reducedEffects) {
+    if ((state.persistent && state.persistent.settings && state.persistent.settings.reducedEffects) ||
+        (state.persistent && state.persistent.accessibility && (state.persistent.accessibility.reducedEffects || state.persistent.accessibility.screenShake === false))) {
       return { x: 0, y: 0 };
     }
 
@@ -548,7 +571,7 @@
     drawPaddle(ctx, runState);
     drawBottomBarrier(ctx, runState);
     drawBalls(ctx, runState);
-    if (!runState.persistent || !runState.persistent.settings || !runState.persistent.settings.reducedEffects) {
+    if (!runState.persistent || !runState.persistent.settings || (!runState.persistent.settings.reducedEffects && !(runState.persistent.accessibility && runState.persistent.accessibility.reducedEffects))) {
       drawEffects(ctx, runState);
       drawParticles(ctx, runState);
     }
