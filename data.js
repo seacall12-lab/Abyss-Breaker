@@ -16,9 +16,9 @@
   }
 
   var Data = {
-    VERSION: "3.0.0",
-    SAVE_SCHEMA_VERSION: 6,
-    SAVE_KEY: "abyssBreaker.save.v6",
+    VERSION: "5.0.0",
+    SAVE_SCHEMA_VERSION: 8,
+    SAVE_KEY: "abyssBreaker.save.v8",
 
     MODES: {
       BOOT: "boot",
@@ -39,7 +39,9 @@
       RECORDS: "records",
       SETTINGS: "settings",
       COMPENDIUM: "compendium",
-      COSMETICS: "cosmetics"
+      COSMETICS: "cosmetics",
+      EQUIPMENT: "equipment",
+      RESEARCH: "research"
     },
 
     CANVAS: {
@@ -707,6 +709,249 @@
     Data.STORAGE_DEFAULTS.settings.vibrationEnabled = Data.STORAGE_DEFAULTS.settings.vibration;
   }
 
+  function applyV4Data(Data) {
+    function set(target, id, patch) {
+      if (target && target[id]) {
+        Object.keys(patch).forEach(function (key) {
+          target[id][key] = patch[key];
+        });
+      }
+    }
+
+    Data.GAME_MODES.abyss_tower = {
+      id: "abyss_tower",
+      name: "심연탑",
+      description: "20스테이지 클리어 후 열리는 층 단위 엔드게임입니다. 5층마다 보스가 등장하고 층마다 변이가 바뀝니다.",
+      unlockedByDefault: false,
+      unlockText: "표준 모드 20스테이지 클리어 후 잠금 해제",
+      scoreMultiplier: 1.25,
+      stoneMultiplier: 1.25,
+      iconId: "mode_tower",
+      rules: { endless: true, tower: true, bossEvery: 5, relicLimit: 4, scalingEvery: 5 }
+    };
+    Data.GAME_MODES.boss_rush = {
+      id: "boss_rush",
+      name: "보스 러시",
+      description: "일반 벽돌 없이 보스 5연전을 진행합니다. 각 보스 후 능력 선택으로 빌드를 빠르게 완성합니다.",
+      unlockedByDefault: false,
+      unlockText: "표준 모드 20스테이지 클리어 후 잠금 해제",
+      scoreMultiplier: 1.35,
+      stoneMultiplier: 1.15,
+      iconId: "mode_boss_rush",
+      rules: { finalStage: 5, bossRush: true, relicLimit: 0, noItems: true }
+    };
+    Data.GAME_MODE_ORDER = ["standard", "endless", "one_life", "no_items", "high_speed", "daily", "mirror_abyss", "overdrive_abyss", "fracture_abyss", "abyss_tower", "boss_rush"];
+
+    Data.MUTATIONS = {
+      mist_gate: {
+        id: "mist_gate",
+        name: "안개 낀 관문",
+        description: "벽돌 HP와 아이템 드롭률이 조금 오르고 보상이 증가합니다.",
+        iconId: "mutation_mist",
+        modifiers: { brickHpMultiplier: 1.1, itemDropMultiplier: 1.1, rewardMultiplier: 1.05 },
+        tags: ["벽돌", "아이템"]
+      },
+      unstable_corridor: {
+        id: "unstable_corridor",
+        name: "불안정한 회랑",
+        description: "포털 기믹과 공 속도가 강화되고 보상이 증가합니다.",
+        iconId: "mutation_corridor",
+        modifiers: { portalWeight: 1.3, ballSpeedMultiplier: 1.05, rewardMultiplier: 1.08 },
+        tags: ["포털", "속도"]
+      },
+      overheated_rift: {
+        id: "overheated_rift",
+        name: "과열된 균열로",
+        description: "폭발 벽돌과 보스 HP가 늘고 보상이 증가합니다.",
+        iconId: "mutation_rift",
+        modifiers: { explosiveWeight: 1.25, bossHpMultiplier: 1.05, rewardMultiplier: 1.1 },
+        tags: ["폭발", "보스"]
+      },
+      hollow_corruption: {
+        id: "hollow_corruption",
+        name: "공허 침식",
+        description: "보호막 벽돌과 약점 피해 가치가 올라갑니다.",
+        iconId: "mutation_hollow",
+        modifiers: { shieldWeight: 1.25, weakDamageBonus: 1, rewardMultiplier: 1.12 },
+        tags: ["보호막", "약점"]
+      },
+      fracture_spread: {
+        id: "fracture_spread",
+        name: "균열 확산",
+        description: "일부 벽돌이 좌우로 움직이고 보상이 크게 증가합니다.",
+        iconId: "mutation_fracture",
+        modifiers: { driftingBricks: true, rewardMultiplier: 1.15 },
+        tags: ["이동", "고위험"]
+      }
+    };
+    Data.MUTATION_ORDER = ["mist_gate", "unstable_corridor", "overheated_rift", "hollow_corruption", "fracture_spread"];
+
+    Data.BUILD_ARCHETYPES = {
+      multiball: { id: "multiball", name: "멀티볼 빌드", iconId: "item_multiball", description: "추천 능력: 분열 시작, 최대 공 개수. 추천 유물: 쌍핵." },
+      pierce: { id: "pierce", name: "관통 빌드", iconId: "score", description: "추천 능력: 관통의 구슬. 추천 유물: 관통 수정." },
+      explosion: { id: "explosion", name: "폭발 빌드", iconId: "class_destroyer", description: "추천 능력: 폭발 충격. 추천 유물: 폭열 휘장." },
+      item: { id: "item", name: "아이템 빌드", iconId: "item_paddle_expand", description: "추천 능력: 자연의 유물, 지속 강화. 추천 클래스: 연금술사." },
+      precision: { id: "precision", name: "정밀 반사 빌드", iconId: "class_tuner", description: "추천 클래스: 조율자. 중앙 반사와 약점 피해를 노립니다." },
+      defense: { id: "defense", name: "수호 빌드", iconId: "class_guardian", description: "추천 능력: 방패 보호막, 하단 보호막. 안정적인 클리어에 강합니다." },
+      laser: { id: "laser", name: "레이저 빌드", iconId: "item_laser_paddle", description: "추천 아이템: 레이저 패들. 보호막 벽돌 정리에 유리합니다." },
+      portal: { id: "portal", name: "포털 빌드", iconId: "zone_corridor", description: "추천 유물: 포털 공명기. 포털 통과 후 다음 타격을 강화합니다." }
+    };
+    Data.BUILD_ARCHETYPE_ORDER = ["multiball", "pierce", "explosion", "item", "precision", "defense", "laser", "portal"];
+
+    Data.EMBLEMS = {
+      default_emblem: { id: "default_emblem", name: "기본 표식", description: "기본 프로필 엠블럼입니다.", iconId: "emblem_default", unlockedByDefault: true },
+      tower_breaker: { id: "tower_breaker", name: "심연 돌파자", description: "심연탑 20층 도달 보상입니다.", iconId: "mode_tower", unlockCondition: "심연탑 20층 도달" },
+      boss_hunter: { id: "boss_hunter", name: "보스 사냥꾼", description: "보스 러시 클리어 보상입니다.", iconId: "mode_boss_rush", unlockCondition: "보스 러시 클리어" },
+      mutation_adapt: { id: "mutation_adapt", name: "균열 적응자", description: "구역 변이 10회 클리어 보상입니다.", iconId: "mutation_fracture", unlockCondition: "변이 적용 스테이지 10회 클리어" },
+      class_master: { id: "class_master", name: "클래스 마스터", description: "클래스 숙련도 5레벨 달성 보상입니다.", iconId: "achievement", unlockCondition: "아무 클래스 숙련도 5레벨" }
+    };
+
+    Data.COSMETICS.ballSkins.tower_orb = { id: "tower_orb", name: "심연탑 구슬", description: "심연탑 5층 도달 보상입니다.", iconId: "mode_tower", unlockCondition: "심연탑 5층 도달" };
+    Data.COSMETICS.ballSkins.boss_fragment = { id: "boss_fragment", name: "군주의 파편", description: "보스 러시 3전 도달 보상입니다.", iconId: "mode_boss_rush", unlockCondition: "보스 러시 3전 도달" };
+    Data.COSMETICS.ballSkins.core_orb = { id: "core_orb", name: "심연 핵 구슬", description: "보스 러시 클리어 보상입니다.", iconId: "currency_abyss_stone", unlockCondition: "보스 러시 클리어" };
+    Data.COSMETICS.ballSkins.fracture_orb = { id: "fracture_orb", name: "균열 구슬", description: "구역 변이 10회 클리어 보상입니다.", iconId: "mutation_fracture", unlockCondition: "구역 변이 10회 클리어" };
+    Data.COSMETICS.paddleSkins.tower_paddle = { id: "tower_paddle", name: "심연탑 방패", description: "심연탑 10층 도달 보상입니다.", iconId: "mode_tower", unlockCondition: "심연탑 10층 도달" };
+    Data.COSMETICS.paddleSkins.sentinel_paddle = { id: "sentinel_paddle", name: "감시자의 막대", description: "감시자 약점 피해 누적 보상입니다.", iconId: "weak_point", unlockCondition: "약점 피해 누적" };
+    Data.COSMETICS.paddleSkins.gatekeeper_paddle = { id: "gatekeeper_paddle", name: "문지기의 막대", description: "포털 보너스 피해 누적 보상입니다.", iconId: "zone_corridor", unlockCondition: "포털 피해 누적" };
+    Data.COSMETICS.paddleSkins.mirror_paddle = { id: "mirror_paddle", name: "거울 막대", description: "정밀 반사 누적 보상입니다.", iconId: "class_tuner", unlockCondition: "정밀 반사 누적" };
+    Data.COSMETICS.paddleSkins.core_paddle = { id: "core_paddle", name: "핵의 막대", description: "20스테이지 클리어 3회 보상입니다.", iconId: "currency_abyss_stone", unlockCondition: "표준 3회 클리어" };
+
+    Data.ACHIEVEMENTS.push(
+      { id: "tower_floor_10", name: "심연탑 입문", description: "심연탑 10층 도달", reward: 20 },
+      { id: "boss_rush_clear", name: "보스 러시 정복", description: "보스 러시 클리어", reward: 25 },
+      { id: "class_mastery_5", name: "숙련된 도전자", description: "아무 클래스 숙련도 5레벨 달성", reward: 20 }
+    );
+
+    Data.STORAGE_DEFAULTS.schemaVersion = 7;
+    Data.STORAGE_DEFAULTS.unlockedModes.abyss_tower = false;
+    Data.STORAGE_DEFAULTS.unlockedModes.boss_rush = false;
+    Data.STORAGE_DEFAULTS.unlocks.modes.abyss_tower = false;
+    Data.STORAGE_DEFAULTS.unlocks.modes.boss_rush = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedBallSkins.tower_orb = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedBallSkins.boss_fragment = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedBallSkins.core_orb = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedBallSkins.fracture_orb = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedPaddleSkins.tower_paddle = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedPaddleSkins.sentinel_paddle = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedPaddleSkins.gatekeeper_paddle = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedPaddleSkins.mirror_paddle = false;
+    Data.STORAGE_DEFAULTS.cosmetics.unlockedPaddleSkins.core_paddle = false;
+    Data.STORAGE_DEFAULTS.endgame = { abyssTowerUnlocked: false, bossRushUnlocked: false, towerBestFloor: 0, bossRushBestStage: 0, bossRushBestTime: null };
+    Data.STORAGE_DEFAULTS.classMastery = {
+      balanced: { level: 1, exp: 0 },
+      guardian: { level: 1, exp: 0 },
+      destroyer: { level: 1, exp: 0 },
+      alchemist: { level: 1, exp: 0 },
+      tuner: { level: 1, exp: 0 }
+    };
+    Data.STORAGE_DEFAULTS.mutations = { clearedCounts: {}, totalClears: 0 };
+    Data.STORAGE_DEFAULTS.buildStats = { bestScores: {}, discoveredArchetypes: {} };
+    Data.STORAGE_DEFAULTS.emblems = { unlocked: { default_emblem: true }, selectedEmblemId: "default_emblem" };
+    Data.STORAGE_DEFAULTS.records.endgame = { towerBestFloor: 0, bossRushBestStage: 0, bossRushBestTime: 0, mutationClears: 0 };
+    Data.STORAGE_DEFAULTS.records.builds = {};
+    Data.BUILD_ARCHETYPE_ORDER.forEach(function (id) {
+      Data.STORAGE_DEFAULTS.records.builds[id] = { bestScore: 0 };
+      Data.STORAGE_DEFAULTS.buildStats.bestScores[id] = 0;
+      Data.STORAGE_DEFAULTS.buildStats.discoveredArchetypes[id] = false;
+    });
+  }
+
+  function applyV5Data(Data) {
+    Data.EQUIPMENT_GRADES = {
+      common: { id: "common", name: "일반", weight: 55, fragments: 2 },
+      rare: { id: "rare", name: "희귀", weight: 30, fragments: 6 },
+      epic: { id: "epic", name: "영웅", weight: 12, fragments: 18 },
+      legendary: { id: "legendary", name: "전설", weight: 3, fragments: 60 },
+      abyss: { id: "abyss", name: "심연", weight: 0, fragments: 150 }
+    };
+    Data.EQUIPMENT_GRADE_ORDER = ["common", "rare", "epic", "legendary", "abyss"];
+    Data.EQUIPMENT_PITY_LIMITS = { rare: 10, epic: 30, legendary: 80 };
+    Data.EQUIPMENT_PULL_COSTS = {
+      core: { one: 30, ten: 250 },
+      board: { one: 30, ten: 250 },
+      chip: { one: 20, ten: 180 }
+    };
+    Data.EQUIPMENT_CRAFT_COSTS = { rare: 30, epic: 120, legendary: 360 };
+
+    Data.BALL_CORES = {
+      default_ball_core: { id: "default_ball_core", name: "기본 공 코어", grade: "common", description: "기본 성능의 공 코어입니다.", iconId: "core_default", slotCount: 1, specialSlotCount: 0, tags: ["basic"], effectId: "none" },
+      split_orb_core: { id: "split_orb_core", name: "분열 구슬", grade: "rare", description: "멀티볼 빌드를 조금 더 빨리 완성합니다.", iconId: "core_split", slotCount: 2, specialSlotCount: 0, tags: ["multiball", "attack"], effectId: "splitOrbBonus" },
+      piercing_core: { id: "piercing_core", name: "관통 구슬", grade: "rare", description: "관통 공격의 마지막 타격 보상을 높입니다.", iconId: "core_pierce", slotCount: 2, specialSlotCount: 0, tags: ["pierce", "attack"], effectId: "pierceScoreBonus" },
+      blast_core: { id: "blast_core", name: "균열 핵", grade: "epic", description: "폭발 빌드의 연쇄 피해를 강화합니다.", iconId: "core_blast", slotCount: 2, specialSlotCount: 0, tags: ["explosion", "attack"], effectId: "blastRadiusBonus" },
+      precision_core: { id: "precision_core", name: "정밀 구슬", grade: "epic", description: "정밀 반사 후 다음 충돌 점수를 높입니다.", iconId: "core_precision", slotCount: 2, specialSlotCount: 0, tags: ["precision", "score"], effectId: "precisionScoreBonus" },
+      nature_core: { id: "nature_core", name: "심연 등불", grade: "legendary", description: "첫 진화 발동 후 해당 스테이지 동안 벽돌 피해를 1 올립니다.", iconId: "core_nature", slotCount: 3, specialSlotCount: 0, tags: ["evolution", "attack"], effectId: "firstEvolutionDamageBonus" }
+    };
+    Data.BALL_CORE_ORDER = ["default_ball_core", "split_orb_core", "piercing_core", "blast_core", "precision_core", "nature_core"];
+
+    Data.BOARD_FRAMES = {
+      default_board_frame: { id: "default_board_frame", name: "기본 보드", grade: "common", description: "기본 성능의 보드 프레임입니다.", iconId: "board_default", slotCount: 1, tags: ["basic"], effectId: "none" },
+      guardian_board: { id: "guardian_board", name: "수호 보드", grade: "rare", description: "생명이 낮을 때 막대 폭이 조금 넓어집니다.", iconId: "board_guardian", slotCount: 2, tags: ["survival", "defense"], effectId: "lowLifePaddleBonus" },
+      magnetic_board: { id: "magnetic_board", name: "자석 보드", grade: "rare", description: "자석 막대 지속시간을 늘립니다.", iconId: "board_magnet", slotCount: 2, tags: ["item", "magnet"], effectId: "magnetDurationBonus" },
+      laser_board: { id: "laser_board", name: "레이저 보드", grade: "epic", description: "레이저 막대 발사 간격을 줄입니다.", iconId: "board_laser", slotCount: 2, tags: ["laser", "item"], effectId: "laserCooldownBonus" },
+      tuning_board: { id: "tuning_board", name: "조율 보드", grade: "epic", description: "정밀 반사 판정 영역을 조금 넓힙니다.", iconId: "board_tuning", slotCount: 2, tags: ["precision", "score"], effectId: "tuningBoardBonus" },
+      abyss_barrier_board: { id: "abyss_barrier_board", name: "심연 방벽", grade: "legendary", description: "하단 보호막 아이템의 내구도를 1 올립니다.", iconId: "board_barrier", slotCount: 3, tags: ["barrier", "survival"], effectId: "barrierDurabilityBonus" }
+    };
+    Data.BOARD_FRAME_ORDER = ["default_board_frame", "guardian_board", "magnetic_board", "laser_board", "tuning_board", "abyss_barrier_board"];
+
+    Data.SKILL_CHIPS = {
+      first_strike_chip: { id: "first_strike_chip", name: "균열 타격 칩", grade: "common", chipType: "attack", description: "각 스테이지 첫 벽돌 타격 피해를 1 올립니다.", iconId: "chip_attack", tags: ["attack", "damage"], effectId: "firstBrickDamageBonus" },
+      blast_chain_chip: { id: "blast_chain_chip", name: "연쇄 폭발 칩", grade: "rare", chipType: "attack", description: "폭발 연쇄 점수를 높입니다.", iconId: "chip_attack", tags: ["explosion", "attack"], effectId: "explosionScoreBonus" },
+      weakness_hunter_chip: { id: "weakness_hunter_chip", name: "약점 추적 칩", grade: "rare", chipType: "boss", description: "보스 약점 피해를 높입니다.", iconId: "chip_boss", tags: ["boss", "weakness"], effectId: "bossWeaknessDamageBonus" },
+      barrier_chip: { id: "barrier_chip", name: "보호막 칩", grade: "common", chipType: "defense", description: "하단 보호막 지속시간을 늘립니다.", iconId: "chip_defense", tags: ["barrier", "defense"], effectId: "barrierDurationBonus" },
+      collector_chip: { id: "collector_chip", name: "수집 칩", grade: "common", chipType: "item", description: "아이템 드롭률을 조금 높입니다.", iconId: "chip_item", tags: ["item", "drop"], effectId: "itemDropBonus" },
+      duration_chip: { id: "duration_chip", name: "지속 칩", grade: "rare", chipType: "item", description: "시간제 아이템 지속시간을 늘립니다.", iconId: "chip_item", tags: ["item", "duration"], effectId: "itemDurationBonus" },
+      precision_chip: { id: "precision_chip", name: "정밀 칩", grade: "rare", chipType: "precision", description: "정밀 반사 다음 충돌 점수를 높입니다.", iconId: "chip_precision", tags: ["precision", "score"], effectId: "precisionScoreBonus" },
+      portal_chip: { id: "portal_chip", name: "위상 칩", grade: "epic", chipType: "gimmick", description: "위상 통과 뒤 첫 충돌 점수를 높입니다.", iconId: "chip_gimmick", tags: ["portal", "score"], effectId: "portalScoreBonus" }
+    };
+    Data.SKILL_CHIP_ORDER = ["first_strike_chip", "collector_chip", "barrier_chip", "blast_chain_chip", "weakness_hunter_chip", "duration_chip", "precision_chip", "portal_chip"];
+    Data.CORE_CHIP_TYPES = ["attack", "precision", "gimmick", "boss"];
+    Data.BOARD_CHIP_TYPES = ["defense", "item", "precision", "gimmick"];
+
+    Data.RECOMMENDATION_TYPES = {
+      attack: { id: "attack", name: "공격형 추천", tags: ["attack", "damage", "explosion", "boss", "pierce"] },
+      survival: { id: "survival", name: "생존형 추천", tags: ["survival", "defense", "barrier"] },
+      item: { id: "item", name: "아이템형 추천", tags: ["item", "drop", "duration", "laser", "magnet"] },
+      precision: { id: "precision", name: "정밀형 추천", tags: ["precision", "score", "portal"] }
+    };
+    Data.RECOMMENDATION_ORDER = ["attack", "survival", "item", "precision"];
+
+    Data.STORAGE_DEFAULTS.schemaVersion = 8;
+    Data.STORAGE_DEFAULTS.equipment = {
+      ownedCores: { default_ball_core: 1 },
+      ownedBoards: { default_board_frame: 1 },
+      ownedChips: {},
+      selectedPresetId: "preset_1",
+      presets: {
+        preset_1: { id: "preset_1", name: "프리셋 1", coreId: "default_ball_core", boardId: "default_board_frame", coreChipIds: [], boardChipIds: [] },
+        preset_2: { id: "preset_2", name: "프리셋 2", coreId: "default_ball_core", boardId: "default_board_frame", coreChipIds: [], boardChipIds: [] },
+        preset_3: { id: "preset_3", name: "프리셋 3", coreId: "default_ball_core", boardId: "default_board_frame", coreChipIds: [], boardChipIds: [] }
+      }
+    };
+    Data.STORAGE_DEFAULTS.research = {
+      abyssFragments: 0,
+      pity: {
+        core: { rare: 0, epic: 0, legendary: 0 },
+        board: { rare: 0, epic: 0, legendary: 0 },
+        chip: { rare: 0, epic: 0, legendary: 0 }
+      },
+      totalPulls: { core: 0, board: 0, chip: 0 },
+      lastResults: []
+    };
+    Data.STORAGE_DEFAULTS.accessibility = {
+      ballSize: "default",
+      paddleSize: "default",
+      touchSensitivity: "default",
+      highContrast: false,
+      reducedEffects: false,
+      screenShake: true
+    };
+    Data.STORAGE_DEFAULTS.discovered.cores = { default_ball_core: true };
+    Data.STORAGE_DEFAULTS.discovered.boards = { default_board_frame: true };
+    Data.STORAGE_DEFAULTS.discovered.chips = {};
+  }
+
   applyV3Data(Data);
+  applyV4Data(Data);
+  applyV5Data(Data);
   AbyssBreaker.Data = deepFreeze(Data);
 })(typeof window !== "undefined" ? window : globalThis);
