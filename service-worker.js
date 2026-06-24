@@ -1,6 +1,6 @@
 "use strict";
 
-var CACHE_NAME = "abyss-breaker-v3.0.0";
+var CACHE_NAME = "abyss-breaker-v5.0.0";
 var CORE_ASSETS = [
   "./",
   "./index.html",
