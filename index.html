@@ -41,7 +41,7 @@
 
       <section id="start-overlay" class="overlay" aria-label="로비">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Abyss Breaker v3.0.0</p>
+          <p class="overlay-kicker">Abyss Breaker v5.0.0</p>
           <h1>Abyss Breaker</h1>
           <dl class="result-list result-list-three">
             <div><dt>심연석</dt><dd id="lobby-stones">0</dd></div>
@@ -58,6 +58,8 @@
             <button id="mode-button" type="button" class="button-secondary">게임 모드</button>
             <button id="class-button" type="button" class="button-secondary">클래스</button>
             <button id="meta-button" type="button" class="button-secondary">영구 성장</button>
+            <button id="equipment-button" type="button" class="button-secondary">장착</button>
+            <button id="research-button" type="button" class="button-secondary">심연 연구소</button>
             <button id="achievement-button" type="button" class="button-secondary">업적</button>
             <button id="records-button" type="button" class="button-secondary">기록</button>
             <button id="compendium-button" type="button" class="button-secondary">도감</button>
@@ -157,6 +159,38 @@
         </div>
       </section>
 
+      <section id="equipment-overlay" class="overlay is-hidden" aria-label="장착">
+        <div class="overlay-panel overlay-panel-wide">
+          <p class="overlay-kicker">장착</p>
+          <h2>장착</h2>
+          <div id="equipment-tabs" class="tab-row" aria-label="장착 프리셋"></div>
+          <p id="equipment-summary" class="overlay-copy"></p>
+          <div id="equipment-recommendations" class="tab-row" aria-label="추천 장착"></div>
+          <div id="equipment-content" class="upgrade-options scroll-panel" aria-live="polite"></div>
+          <button id="equipment-close-button" type="button" class="button-secondary">닫기</button>
+        </div>
+      </section>
+
+      <section id="research-overlay" class="overlay is-hidden" aria-label="심연 연구소">
+        <div class="overlay-panel overlay-panel-wide">
+          <p class="overlay-kicker">심연 연구소</p>
+          <h2>심연 연구소</h2>
+          <p id="research-summary" class="overlay-copy"></p>
+          <div class="overlay-actions">
+            <button id="core-pull-button" type="button" class="button-secondary">공 코어 1회</button>
+            <button id="board-pull-button" type="button" class="button-secondary">보드 1회</button>
+            <button id="chip-pull-button" type="button" class="button-secondary">칩 1회</button>
+          </div>
+          <div class="overlay-actions">
+            <button id="core-pull10-button" type="button" class="button-secondary">공 코어 10회</button>
+            <button id="board-pull10-button" type="button" class="button-secondary">보드 10회</button>
+            <button id="chip-pull10-button" type="button" class="button-secondary">칩 10회</button>
+          </div>
+          <div id="research-results" class="upgrade-options scroll-panel" aria-live="polite"></div>
+          <button id="research-close-button" type="button" class="button-secondary">닫기</button>
+        </div>
+      </section>
+
       <section id="records-overlay" class="overlay is-hidden" aria-label="기록">
         <div class="overlay-panel overlay-panel-wide">
           <p class="overlay-kicker">기록</p>
@@ -193,6 +227,11 @@
           <label class="setting-row"><span>효과음</span><input id="sound-toggle" type="checkbox"></label>
           <label class="setting-row"><span>진동</span><input id="vibration-toggle" type="checkbox"></label>
           <label class="setting-row"><span>효과 감소</span><input id="reduced-effects-toggle" type="checkbox"></label>
+          <label class="setting-row"><span>공 크기</span><select id="ball-size-select"><option value="small">작게</option><option value="default">기본</option><option value="large">크게</option></select></label>
+          <label class="setting-row"><span>막대 크기</span><select id="paddle-size-select"><option value="default">기본</option><option value="wide">넓게</option><option value="extra_wide">매우 넓게</option></select></label>
+          <label class="setting-row"><span>터치 민감도</span><select id="touch-sensitivity-select"><option value="low">낮게</option><option value="default">기본</option><option value="high">높게</option></select></label>
+          <label class="setting-row"><span>고대비 모드</span><input id="high-contrast-toggle" type="checkbox"></label>
+          <label class="setting-row"><span>화면 흔들림</span><input id="screen-shake-toggle" type="checkbox"></label>
           <textarea id="save-data-input" rows="6" spellcheck="false" placeholder="저장 JSON을 내보내거나 붙여넣으세요."></textarea>
           <p id="settings-message" class="overlay-copy"></p>
           <div class="overlay-actions">
