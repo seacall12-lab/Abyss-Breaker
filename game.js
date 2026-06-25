@@ -322,6 +322,75 @@
     return total;
   }
 
+  function getAppliedEquipmentItems(state) {
+    var equipment = getAppliedEquipment(state);
+    var items = [
+      getEquipmentItem("core", equipment.coreId),
+      getEquipmentItem("board", equipment.boardId)
+    ];
+
+    (equipment.coreChipIds || []).forEach(function (id) {
+      items.push(getEquipmentItem("chip", id));
+    });
+    (equipment.boardChipIds || []).forEach(function (id) {
+      items.push(getEquipmentItem("chip", id));
+    });
+    return items.filter(Boolean);
+  }
+
+  function getEquipmentTagCount(state, tag) {
+    return getAppliedEquipmentItems(state).reduce(function (count, item) {
+      return count + ((item.tags || []).indexOf(tag) !== -1 ? 1 : 0);
+    }, 0);
+  }
+
+  function hasEquipmentSetBonus(state, bonusId) {
+    var bonus = Data.EQUIPMENT_SET_BONUSES && Data.EQUIPMENT_SET_BONUSES[bonusId];
+
+    return !!bonus && getEquipmentTagCount(state, bonus.tag) >= Math.max(1, bonus.threshold || 3);
+  }
+
+  function getRiskContracts(save) {
+    return (save && Array.isArray(save.selectedRiskContractIds) ? save.selectedRiskContractIds : []).map(function (id) {
+      return Data.RISK_CONTRACTS && Data.RISK_CONTRACTS[id];
+    }).filter(Boolean);
+  }
+
+  function applyRiskContractsToRun(state, contractIds, applyLife) {
+    var rewardMultiplier = 1;
+    var ids = Array.isArray(contractIds) ? contractIds : (state.persistent && state.persistent.selectedRiskContractIds);
+    var rules = state.gameModeRules || {};
+
+    state.riskContractIds = [];
+    (ids || []).map(function (id) {
+      return Data.RISK_CONTRACTS && Data.RISK_CONTRACTS[id];
+    }).filter(Boolean).forEach(function (contract) {
+      var modifiers = contract.modifiers || {};
+
+      if ((contract.disabledModes || []).indexOf(state.gameModeId) !== -1 ||
+          (modifiers.itemDropMultiplier && rules.noItems) ||
+          (modifiers.lifeAdd < 0 && rules.maxLives === 1 && rules.startingLives === 1)) {
+        return;
+      }
+      state.riskContractIds.push(contract.id);
+      rewardMultiplier += Math.max(0, contract.rewardMultiplier || 0);
+      if (applyLife !== false && modifiers.lifeAdd) {
+        state.maxLives = Math.max(1, state.maxLives + modifiers.lifeAdd);
+        state.lives = Math.max(1, Math.min(state.maxLives, state.lives + modifiers.lifeAdd));
+      }
+      if (modifiers.ballSpeedMultiplier) {
+        state.gameModeRules.ballSpeedMultiplier = (state.gameModeRules.ballSpeedMultiplier || 1) * modifiers.ballSpeedMultiplier;
+      }
+      if (modifiers.ballMaxMultiplier) {
+        state.gameModeRules.ballMaxMultiplier = (state.gameModeRules.ballMaxMultiplier || 1) * modifiers.ballMaxMultiplier;
+      }
+      if (modifiers.itemDropMultiplier) {
+        state.gameModeRules.itemDropMultiplier = (state.gameModeRules.itemDropMultiplier || 1) * modifiers.itemDropMultiplier;
+      }
+    });
+    state.runModifiers.riskRewardMultiplier = rewardMultiplier;
+  }
+
   function getAccessibility(state) {
     return state && (state.accessibilitySnapshot || (state.persistent && state.persistent.accessibility)) || Data.STORAGE_DEFAULTS.accessibility || {};
   }
@@ -566,6 +635,7 @@
       (isFocusedLensActive(state) ? 1 : 0) +
       (hasEvolution(state, "piercing_nature") ? 1 : 0) +
       (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 2 : 0) +
+      (hasEquipmentSetBonus(state, "attack") ? 1 : 0) +
       (getEquipmentEffectLevel(state, "firstEvolutionDamageBonus") > 0 && Object.keys(state.activeEvolutions || {}).length > 0 ? 1 : 0);
   }
 
@@ -585,12 +655,12 @@
       (isFocusedLensActive(state) ? 1.3 : 1) *
       (hasEvolution(state, "split_storm") && activeBallCount(state) >= 3 ? 1.2 : 1) *
       (hasEvolution(state, "last_focus") && activeBallCount(state) === 1 ? 1.5 : 1) *
-      (1 + getEquipmentEffectLevel(state, "precisionScoreBonus") * 0.04 + getEquipmentEffectLevel(state, "portalScoreBonus") * 0.04 + getEquipmentEffectLevel(state, "pierceScoreBonus") * 0.03 + getEquipmentEffectLevel(state, "explosionScoreBonus") * 0.03);
+      (1 + getEquipmentEffectLevel(state, "precisionScoreBonus") * 0.04 + getEquipmentEffectLevel(state, "portalScoreBonus") * 0.04 + getEquipmentEffectLevel(state, "pierceScoreBonus") * 0.03 + getEquipmentEffectLevel(state, "explosionScoreBonus") * 0.03 + (hasEquipmentSetBonus(state, "precision") ? 0.05 : 0));
   }
 
   function getDropMultiplier(state) {
     var rules = getGameModeRules(state);
-    return (1 + getUpgradeLevel(state, "nature_drop") * 0.2 + getEquipmentEffectLevel(state, "itemDropBonus") * 0.04) * (getClassData(state).itemDropMultiplier || 1) * (rules.itemDropMultiplier || 1);
+    return (1 + getUpgradeLevel(state, "nature_drop") * 0.2 + getEquipmentEffectLevel(state, "itemDropBonus") * 0.04 + (hasEquipmentSetBonus(state, "item") ? 0.05 : 0)) * (getClassData(state).itemDropMultiplier || 1) * (rules.itemDropMultiplier || 1);
   }
 
   function getDurationMultiplier(state) {
@@ -598,7 +668,7 @@
     return (1 + getUpgradeLevel(state, "duration_boost") * 0.25) *
       (getClassData(state).itemDurationMultiplier || 1) *
       (hasRelic(state, "alchemist_star") ? 1.15 : 1) *
-      (1 + getEquipmentEffectLevel(state, "itemDurationBonus") * 0.05 + getEquipmentEffectLevel(state, "magnetDurationBonus") * 0.04) *
+      (1 + getEquipmentEffectLevel(state, "itemDurationBonus") * 0.05 + getEquipmentEffectLevel(state, "magnetDurationBonus") * 0.04 + (hasEquipmentSetBonus(state, "item") ? 0.05 : 0)) *
       (rules.itemDurationMultiplier || 1);
   }
 
@@ -1135,8 +1205,13 @@
     };
     runState.evolutionStageFlags = {};
     runState.runModifiers = {};
+    applyRiskContractsToRun(runState, null, true);
     runState.appliedEquipment = State.getAppliedEquipment ? State.getAppliedEquipment(runState.persistent) : { coreId: "default_ball_core", boardId: "default_board_frame", coreChipIds: [], boardChipIds: [] };
     runState.accessibilitySnapshot = JSON.parse(JSON.stringify((runState.persistent && runState.persistent.accessibility) || Data.STORAGE_DEFAULTS.accessibility || {}));
+    if (hasEquipmentSetBonus(runState, "survival")) {
+      runState.maxLives += 1;
+      runState.lives += 1;
+    }
     runState.equipmentStageFlags = {};
     runState.endgameMode = rules.tower ? "abyss_tower" : rules.bossRush ? "boss_rush" : "";
     runState.activeMutationIds = pickRunMutations(runState, rules);
@@ -1433,7 +1508,8 @@
     ball.vx = Math.sin(angle) * speed;
     ball.vy = -Math.cos(angle) * speed;
     normalizeBallVelocity(state, ball, speed);
-    if (classData.id === "tuner" && Math.abs(relativeHit) <= (classData.precisionZone || 0.3)) {
+    var precisionZone = clamp((classData.precisionZone || 0.3) + getEquipmentEffectLevel(state, "tuningBoardBonus") * 0.03 + (hasEquipmentSetBonus(state, "precision") ? 0.03 : 0), 0.2, 0.45);
+    if (classData.id === "tuner" && Math.abs(relativeHit) <= precisionZone) {
       state.evolutionCounters = state.evolutionCounters || {};
       state.evolutionCounters.precisionPrimed = Math.max(state.evolutionCounters.precisionPrimed || 0, classData.precisionDamageAdd || 1);
       state.evolutionCounters.precisionScore = Math.max(state.evolutionCounters.precisionScore || 1, classData.precisionScoreMultiplier || 1.4);
@@ -2652,7 +2728,7 @@
       return 0;
     }
 
-    return Math.max(1, Math.floor(reward * getGameModeData(state).stoneMultiplier * (getStageData(state).rewardMultiplier || 1)));
+    return Math.max(1, Math.floor(reward * getGameModeData(state).stoneMultiplier * (getStageData(state).rewardMultiplier || 1) * (state.runModifiers && state.runModifiers.riskRewardMultiplier || 1)));
   }
 
   function grantDailyRewards(state, runClear) {
@@ -2690,6 +2766,39 @@
     return gained;
   }
 
+  function getDailyGoalValue(state, metric) {
+    if (metric === "highestStageReached") {
+      return state.highestStageReached || state.stage || 1;
+    }
+    return Math.max(0, state.runStats && state.runStats[metric] || 0);
+  }
+
+  function grantDailyGoalRewards(state) {
+    var daily = state.persistent && state.persistent.dailyChallenge;
+    var dateKey = getLocalDateKey();
+    var rewards;
+    var gained = 0;
+    var completed = [];
+
+    if (!daily || !Array.isArray(Data.DAILY_GOALS)) {
+      return { reward: 0, completed: [] };
+    }
+
+    rewards = daily.rewards[dateKey] || {};
+    rewards.goals = rewards.goals || {};
+    Data.DAILY_GOALS.forEach(function (goal) {
+      if (!rewards.goals[goal.id] && getDailyGoalValue(state, goal.metric) >= goal.target) {
+        rewards.goals[goal.id] = true;
+        gained += Math.max(0, goal.reward || 0);
+        completed.push(goal.name);
+      }
+    });
+    daily.lastDate = dateKey;
+    daily.rewards[dateKey] = rewards;
+    state.runStats.dailyGoalsCompleted = completed;
+    return { reward: gained, completed: completed };
+  }
+
   function buildRunSummary(state, runClear, reward) {
     var mostItem = "-";
     var itemCounts = state.runStats.itemCounts || {};
@@ -2719,6 +2828,11 @@
       runElapsedTime: state.runElapsedTime || 0,
       runClear: !!runClear,
       topBuilds: getTopBuilds(state).slice(0, 2),
+      riskContractIds: Array.isArray(state.riskContractIds) ? state.riskContractIds.slice() : [],
+      equipmentSetBonuses: (Data.EQUIPMENT_SET_BONUS_ORDER || []).filter(function (id) {
+        return hasEquipmentSetBonus(state, id);
+      }),
+      dailyGoalsCompleted: state.runStats.dailyGoalsCompleted || [],
       bestScoreUpdated: state.score >= (state.persistent.bestScore || 0),
       bestStageUpdated: (state.highestStageReached || 1) >= (state.persistent.highestStage || 1)
     };
@@ -2832,7 +2946,9 @@
 
     var reward = calculateAbyssReward(state, !!runClear);
     var dailyReward = grantDailyRewards(state, !!runClear);
+    var dailyGoalReward = grantDailyGoalRewards(state);
     reward += dailyReward;
+    reward += dailyGoalReward.reward;
     state.runSummary = buildRunSummary(state, !!runClear, reward);
 
     state.flags.runRewardGranted = true;
@@ -3267,6 +3383,7 @@
     runState.evolutionCounters.precisionScore = runState.evolutionCounters.precisionScore || 1;
     runState.evolutionCounters.portalScore = runState.evolutionCounters.portalScore || 1;
     runState.runModifiers = JSON.parse(JSON.stringify(checkpoint.runModifiers || {}));
+    applyRiskContractsToRun(runState, checkpoint.riskContractIds || [], false);
     runState.endgameMode = checkpoint.endgameMode || "";
     runState.activeMutationIds = Array.isArray(checkpoint.activeMutationIds) ? checkpoint.activeMutationIds.slice(0, 2) : [];
     runState.buildScores = JSON.parse(JSON.stringify(checkpoint.buildScores || (checkpoint.runStats && checkpoint.runStats.buildScores) || {}));
