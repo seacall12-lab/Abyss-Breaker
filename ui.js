@@ -24,6 +24,8 @@
   var cosmeticsSignature = "";
   var equipmentSignature = "";
   var researchSignature = "";
+  var equipmentTab = "core";
+  var researchTab = "core";
   var compendiumTab = "upgrades";
   var cosmeticsTab = "ball";
   var hudSignature = "";
@@ -51,7 +53,7 @@
       "control-guide", "launch-button", "pause-button", "restart-button", "start-overlay",
       "start-button", "mode-button", "class-button", "meta-button", "equipment-button", "research-button", "achievement-button",
       "records-button", "compendium-button", "cosmetics-button", "settings-button", "lobby-stones", "lobby-class", "lobby-mode",
-      "lobby-best", "lobby-stage", "lobby-meta-summary", "lobby-continue-info",
+      "lobby-best", "lobby-stage", "lobby-meta-summary", "lobby-continue-info", "lobby-risk-contracts", "lobby-daily-goals",
       "new-run-button", "pause-overlay", "pause-run-info",
       "resume-button", "pause-settings-button", "pause-quit-button", "pause-restart-button",
       "life-lost-overlay", "continue-button", "stage-clear-overlay", "stage-clear-score", "stage-mission-result",
@@ -61,8 +63,8 @@
       "class-options", "class-close-button", "meta-overlay", "meta-stones-value",
       "meta-upgrade-options", "meta-close-button", "achievement-overlay",
       "achievement-summary", "achievement-list", "achievement-close-button", "records-overlay",
-      "equipment-overlay", "equipment-tabs", "equipment-summary", "equipment-recommendations", "equipment-content", "equipment-close-button",
-      "research-overlay", "research-summary", "core-pull-button", "board-pull-button", "chip-pull-button",
+      "equipment-overlay", "equipment-tabs", "equipment-preset-tabs", "equipment-summary", "equipment-recommendations", "equipment-content", "equipment-close-button",
+      "research-overlay", "research-tabs", "research-summary", "core-pull-button", "board-pull-button", "chip-pull-button",
       "core-pull10-button", "board-pull10-button", "chip-pull10-button", "research-results", "research-close-button",
       "records-content", "records-close-button", "compendium-overlay", "compendium-tabs",
       "compendium-content", "compendium-close-button", "cosmetics-overlay", "cosmetics-tabs",
@@ -879,35 +881,171 @@
     return Data.EQUIPMENT_GRADES && Data.EQUIPMENT_GRADES[grade] ? Data.EQUIPMENT_GRADES[grade].name : grade;
   }
 
-  function appendEquipmentCard(container, kind, item, owned, selected, equippedSlot) {
-    var action = !owned ? "미보유" : selected && kind === "chip" ? "해제" : selected ? "장착 중" : "장착";
-    var disabled = !owned || (selected && kind !== "chip");
-    container.appendChild(createInfoButton("upgrade-card cosmetic-card" + (selected ? " is-selected" : ""), item.name, item.description, gradeName(item.grade), action, disabled, function () {
-      var ok = false;
-      if (kind === "core") {
-        ok = State.equipCore(item.id);
-      } else if (kind === "board") {
-        ok = State.equipBoard(item.id);
-      } else if (equippedSlot) {
-        ok = State.unequipChip(equippedSlot, item.id);
-      } else {
-        ok = State.equipChip("core", item.id) || State.equipChip("board", item.id);
+  function kindName(kind) {
+    return kind === "core" ? "공 코어" : kind === "board" ? "보드" : "스킬 칩";
+  }
+
+  function createBadge(text, className) {
+    var badge = global.document.createElement("span");
+    badge.className = className || "tag-pill";
+    setText(badge, text);
+    return badge;
+  }
+
+  function appendEmptyMessage(container, text) {
+    var message = global.document.createElement("p");
+    message.className = "empty-message";
+    setText(message, text);
+    container.appendChild(message);
+  }
+
+  function createCompactCard(item, options) {
+    var settings = options || {};
+    var card = global.document.createElement("article");
+    var icon = global.document.createElement("span");
+    var body = global.document.createElement("div");
+    var header = global.document.createElement("div");
+    var title = global.document.createElement("strong");
+    var badges = global.document.createElement("div");
+    var actions = global.document.createElement("div");
+    var details = global.document.createElement("details");
+    var summary = global.document.createElement("summary");
+    var copy = global.document.createElement("p");
+
+    card.className = "compact-card item-card grade-" + (item.grade || "common") +
+      (settings.selected ? " is-selected" : "") +
+      (settings.locked ? " is-locked" : "");
+    icon.className = "card-icon";
+    icon.innerHTML = getIconMarkup(settings.locked ? "locked" : item.iconId);
+    body.className = "compact-card-body";
+    header.className = "compact-card-header";
+    badges.className = "compact-card-badges";
+    actions.className = "compact-card-actions";
+    details.className = "compact-card-detail";
+    summary.className = "detail-toggle";
+
+    setText(title, item.name);
+    header.appendChild(title);
+    header.appendChild(createBadge(gradeName(item.grade), "grade-badge"));
+
+    (item.tags || []).slice(0, 3).forEach(function (tag) {
+      badges.appendChild(createBadge(tag, "tag-pill"));
+    });
+    if (settings.statusText) {
+      badges.appendChild(createBadge(settings.statusText, settings.selected ? "equipped-badge" : "status-badge"));
+    }
+
+    (settings.actions || []).forEach(function (definition) {
+      var button = global.document.createElement("button");
+      button.type = "button";
+      button.className = definition.className || "button-secondary compact-action";
+      button.disabled = !!definition.disabled;
+      setText(button, definition.label);
+      if (definition.onClick) {
+        button.addEventListener("click", definition.onClick);
       }
-      if (ok) {
-        playSound("confirm");
-        equipmentSignature = "";
-        sync(State.getRunState());
-      }
-    }, owned ? item.iconId : "locked"));
+      actions.appendChild(button);
+    });
+
+    setText(summary, "상세");
+    setText(copy, item.description || "");
+    details.appendChild(summary);
+    details.appendChild(copy);
+
+    body.appendChild(header);
+    body.appendChild(badges);
+    if (actions.childNodes.length) {
+      body.appendChild(actions);
+    }
+    body.appendChild(details);
+    card.appendChild(icon);
+    card.appendChild(body);
+    return card;
+  }
+
+  function afterEquipmentAction(ok) {
+    if (ok) {
+      playSound("confirm");
+      equipmentSignature = "";
+      sync(State.getRunState());
+    } else {
+      playSound("error");
+    }
+  }
+
+  function chipCanUseSlot(save, preset, slot, item) {
+    var host = slot === "board" ? getEquipmentItem("board", preset.boardId) : getEquipmentItem("core", preset.coreId);
+    var list = slot === "board" ? (preset.boardChipIds || []) : (preset.coreChipIds || []);
+    var allowed = slot === "board" ? (Data.BOARD_CHIP_TYPES || []) : (Data.CORE_CHIP_TYPES || []);
+
+    return getOwnedCount(save, "chip", item.id) > 0 &&
+      allowed.indexOf(item.chipType) !== -1 &&
+      list.indexOf(item.id) === -1 &&
+      list.length < Math.max(0, host && host.slotCount || 0);
+  }
+
+  function appendEquipmentCard(container, save, preset, kind, item, owned, selected, equippedSlot) {
+    var actions = [];
+    var slotLabel = equippedSlot === "core" ? "공" : equippedSlot === "board" ? "보드" : equippedSlot;
+    var status = !owned ? "미보유" : selected ? (kind === "chip" ? slotLabel + " 장착" : "장착 중") : "보유";
+
+    if (kind === "core") {
+      actions.push({
+        label: selected ? "장착 중" : "장착",
+        disabled: !owned || selected,
+        onClick: function () { afterEquipmentAction(State.equipCore(item.id)); }
+      });
+    } else if (kind === "board") {
+      actions.push({
+        label: selected ? "장착 중" : "장착",
+        disabled: !owned || selected,
+        onClick: function () { afterEquipmentAction(State.equipBoard(item.id)); }
+      });
+    } else if (equippedSlot) {
+      actions.push({
+        label: "해제",
+        disabled: !owned,
+        onClick: function () { afterEquipmentAction(State.unequipChip(equippedSlot, item.id)); }
+      });
+    } else {
+      actions.push({
+        label: "공 장착",
+        disabled: !chipCanUseSlot(save, preset, "core", item),
+        onClick: function () { afterEquipmentAction(State.equipChip("core", item.id)); }
+      });
+      actions.push({
+        label: "보드 장착",
+        disabled: !chipCanUseSlot(save, preset, "board", item),
+        onClick: function () { afterEquipmentAction(State.equipChip("board", item.id)); }
+      });
+    }
+
+    container.appendChild(createCompactCard(item, {
+      selected: selected,
+      locked: !owned,
+      statusText: status,
+      actions: actions
+    }));
   }
 
   function renderEquipment(state) {
     var save = state.persistent;
     var equipment = save.equipment || {};
     var preset = equipment.presets && equipment.presets[equipment.selectedPresetId] || {};
-    var signature = JSON.stringify(equipment);
+    var signature = equipmentTab + ":" + JSON.stringify(equipment);
 
-    renderTabs(dom.equipmentTabs, Object.keys(equipment.presets || {}).map(function (id) {
+    renderTabs(dom.equipmentTabs, [
+      { id: "core", label: "공 코어" },
+      { id: "board", label: "보드" },
+      { id: "chip", label: "스킬 칩" },
+      { id: "preset", label: "프리셋" }
+    ], equipmentTab, function (id) {
+      equipmentTab = id;
+      equipmentSignature = "";
+      renderEquipment(State.getRunState());
+    });
+
+    renderTabs(dom.equipmentPresetTabs, Object.keys(equipment.presets || {}).map(function (id) {
       return { id: id, label: (equipment.presets[id] && equipment.presets[id].name) || id };
     }), equipment.selectedPresetId, function (id) {
       if (State.selectEquipmentPreset(id)) {
@@ -915,6 +1053,7 @@
         renderEquipment(State.getRunState());
       }
     });
+    setHidden(dom.equipmentPresetTabs, equipmentTab !== "preset");
 
     renderTabs(dom.equipmentRecommendations, (Data.RECOMMENDATION_ORDER || []).map(function (id) {
       var rec = Data.RECOMMENDATION_TYPES[id];
@@ -926,6 +1065,7 @@
         renderEquipment(State.getRunState());
       }
     });
+    setHidden(dom.equipmentRecommendations, equipmentTab !== "preset");
 
     if (signature === equipmentSignature) {
       return;
@@ -934,51 +1074,110 @@
     clearChildren(dom.equipmentContent);
     var core = getEquipmentItem("core", preset.coreId);
     var board = getEquipmentItem("board", preset.boardId);
-    setText(dom.equipmentSummary, "현재 " + (core ? core.name : "-") + " / " + (board ? board.name : "-") + " / 조각 " + formatInteger(save.research && save.research.abyssFragments));
+    var effectSummary = State.getEquipmentEffectSummary ? State.getEquipmentEffectSummary(save) : [];
+    setText(dom.equipmentSummary, ((equipment.presets && equipment.presets[equipment.selectedPresetId] && equipment.presets[equipment.selectedPresetId].name) || "프리셋") +
+      " / " + (core ? core.name : "-") + " / " + (board ? board.name : "-") + " / 조각 " + formatInteger(save.research && save.research.abyssFragments) +
+      " / 효과 " + (effectSummary.length ? effectSummary.join(", ") : "없음"));
 
-    (Data.BALL_CORE_ORDER || []).forEach(function (id) {
+    if (equipmentTab === "core") {
+      (Data.BALL_CORE_ORDER || []).forEach(function (id) {
       var item = getEquipmentItem("core", id);
       if (item) {
-        appendEquipmentCard(dom.equipmentContent, "core", item, getOwnedCount(save, "core", id) > 0, preset.coreId === id);
+          appendEquipmentCard(dom.equipmentContent, save, preset, "core", item, getOwnedCount(save, "core", id) > 0, preset.coreId === id);
       }
-    });
-    (Data.BOARD_FRAME_ORDER || []).forEach(function (id) {
+      });
+    } else if (equipmentTab === "board") {
+      (Data.BOARD_FRAME_ORDER || []).forEach(function (id) {
       var item = getEquipmentItem("board", id);
       if (item) {
-        appendEquipmentCard(dom.equipmentContent, "board", item, getOwnedCount(save, "board", id) > 0, preset.boardId === id);
+          appendEquipmentCard(dom.equipmentContent, save, preset, "board", item, getOwnedCount(save, "board", id) > 0, preset.boardId === id);
       }
-    });
-    (Data.SKILL_CHIP_ORDER || []).forEach(function (id) {
+      });
+    } else if (equipmentTab === "chip") {
+      (Data.SKILL_CHIP_ORDER || []).forEach(function (id) {
       var item = getEquipmentItem("chip", id);
       var coreEquipped = preset.coreChipIds && preset.coreChipIds.indexOf(id) !== -1;
       var boardEquipped = preset.boardChipIds && preset.boardChipIds.indexOf(id) !== -1;
       if (item) {
-        appendEquipmentCard(dom.equipmentContent, "chip", item, getOwnedCount(save, "chip", id) > 0, coreEquipped || boardEquipped, coreEquipped ? "core" : boardEquipped ? "board" : "");
+          appendEquipmentCard(dom.equipmentContent, save, preset, "chip", item, getOwnedCount(save, "chip", id) > 0, coreEquipped || boardEquipped, coreEquipped ? "core" : boardEquipped ? "board" : "");
       }
-    });
+      });
+    } else {
+      if (core) {
+        appendEquipmentCard(dom.equipmentContent, save, preset, "core", core, true, true);
+      }
+      if (board) {
+        appendEquipmentCard(dom.equipmentContent, save, preset, "board", board, true, true);
+      }
+      (preset.coreChipIds || []).concat(preset.boardChipIds || []).forEach(function (id) {
+        var item = getEquipmentItem("chip", id);
+        if (item) {
+          appendEquipmentCard(dom.equipmentContent, save, preset, "chip", item, true, true, (preset.coreChipIds || []).indexOf(id) !== -1 ? "core" : "board");
+        }
+      });
+      if (!dom.equipmentContent.childNodes.length) {
+        appendEmptyMessage(dom.equipmentContent, "프리셋에 장착된 칩이 없습니다.");
+      }
+    }
     equipmentSignature = signature;
   }
 
   function appendResearchResult(result) {
     var item = getEquipmentItem(result.kind, result.id);
-    dom.researchResults.appendChild(createInfoButton("upgrade-card", result.name, item ? item.description : "", gradeName(result.grade), result.duplicate ? "중복 +" + formatInteger(result.fragments) + " 조각" : "신규", true, null, item ? item.iconId : "relic"));
+    if (!item) {
+      return;
+    }
+    dom.researchResults.appendChild(createCompactCard(item, {
+      statusText: result.duplicate ? "중복 +" + formatInteger(result.fragments) : "신규",
+      actions: []
+    }));
   }
 
   function renderResearch(state) {
     var save = state.persistent;
     var research = save.research || {};
-    var signature = save.abyssStones + ":" + JSON.stringify(research);
-    var corePity = research.pity && research.pity.core || {};
-    var boardPity = research.pity && research.pity.board || {};
-    var chipPity = research.pity && research.pity.chip || {};
+    var signature = researchTab + ":" + save.abyssStones + ":" + JSON.stringify(research) + ":" + JSON.stringify(save.equipment || {});
+    var selectedKind = researchTab === "craft" ? "core" : researchTab;
+    var selectedPity = research.pity && research.pity[selectedKind] || {};
+
+    renderTabs(dom.researchTabs, [
+      { id: "core", label: "공 추출" },
+      { id: "board", label: "보드 복원" },
+      { id: "chip", label: "칩 각인" },
+      { id: "craft", label: "제작" }
+    ], researchTab, function (id) {
+      researchTab = id;
+      researchSignature = "";
+      renderResearch(State.getRunState());
+    });
 
     if (signature === researchSignature) {
       return;
     }
-    setText(dom.researchSummary, "심연석 " + formatInteger(save.abyssStones) + " / 조각 " + formatInteger(research.abyssFragments) +
-      " / 전설 천장 공 " + formatInteger(corePity.legendary) + "/80 보드 " + formatInteger(boardPity.legendary) + "/80 칩 " + formatInteger(chipPity.legendary) + "/80");
+
+    setHidden(dom.corePullButton, researchTab !== "core");
+    setHidden(dom.corePull10Button, researchTab !== "core");
+    setHidden(dom.boardPullButton, researchTab !== "board");
+    setHidden(dom.boardPull10Button, researchTab !== "board");
+    setHidden(dom.chipPullButton, researchTab !== "chip");
+    setHidden(dom.chipPull10Button, researchTab !== "chip");
+    setText(dom.researchSummary, researchTab === "craft" ?
+      "심연석 " + formatInteger(save.abyssStones) + " / 심연 조각 " + formatInteger(research.abyssFragments) :
+      kindName(selectedKind) + " / 심연석 " + formatInteger(save.abyssStones) + " / 조각 " + formatInteger(research.abyssFragments) +
+        " / 희귀 " + formatInteger(selectedPity.rare) + "/10 영웅 " + formatInteger(selectedPity.epic) + "/30 전설 " + formatInteger(selectedPity.legendary) + "/80");
     clearChildren(dom.researchResults);
-    (research.lastResults || []).forEach(appendResearchResult);
+
+    if (researchTab !== "craft") {
+      (research.lastResults || []).filter(function (result) {
+        return result.kind === researchTab;
+      }).forEach(appendResearchResult);
+      if (!dom.researchResults.childNodes.length) {
+        appendEmptyMessage(dom.researchResults, "최근 추출 결과가 없습니다.");
+      }
+      researchSignature = signature;
+      return;
+    }
+
     ["core", "board", "chip"].forEach(function (kind) {
       var order = kind === "core" ? Data.BALL_CORE_ORDER : kind === "board" ? Data.BOARD_FRAME_ORDER : Data.SKILL_CHIP_ORDER;
       (order || []).forEach(function (id) {
@@ -988,15 +1187,27 @@
         if (!item || !cost || owned) {
           return;
         }
-        dom.researchResults.appendChild(createInfoButton("upgrade-card", item.name, item.description, "선택 제작 / " + gradeName(item.grade), "조각 " + formatInteger(cost), research.abyssFragments < cost, function () {
-          if (State.craftEquipment(kind, item.id)) {
-            playSound("confirm");
-            researchSignature = "";
-            sync(State.getRunState());
-          }
-        }, item.iconId));
+        dom.researchResults.appendChild(createCompactCard(item, {
+          statusText: kindName(kind),
+          actions: [{
+            label: "조각 " + formatInteger(cost),
+            disabled: research.abyssFragments < cost,
+            onClick: function () {
+              if (State.craftEquipment(kind, item.id)) {
+                playSound("confirm");
+                researchSignature = "";
+                sync(State.getRunState());
+              } else {
+                playSound("error");
+              }
+            }
+          }]
+        }));
       });
     });
+    if (!dom.researchResults.childNodes.length) {
+      appendEmptyMessage(dom.researchResults, "제작 가능한 미보유 장비가 없습니다.");
+    }
     researchSignature = signature;
   }
 
@@ -1073,6 +1284,65 @@
     });
   }
 
+  function getLocalDateKey() {
+    var date = new Date();
+    var year = date.getFullYear();
+    var month = String(date.getMonth() + 1).padStart(2, "0");
+    var day = String(date.getDate()).padStart(2, "0");
+    return year + "-" + month + "-" + day;
+  }
+
+  function renderRiskContracts(save, disabled) {
+    var selected = Array.isArray(save.selectedRiskContractIds) ? save.selectedRiskContractIds : [];
+    var mode = getModeData(save);
+    var rules = mode && mode.rules || {};
+
+    clearChildren(dom.lobbyRiskContracts);
+    (Data.RISK_CONTRACT_ORDER || []).forEach(function (id) {
+      var contract = Data.RISK_CONTRACTS && Data.RISK_CONTRACTS[id];
+      var active = selected.indexOf(id) !== -1;
+      var blocked = false;
+      var button;
+
+      if (!contract) {
+        return;
+      }
+      blocked = (contract.disabledModes || []).indexOf(mode.id) !== -1 ||
+        (contract.modifiers && contract.modifiers.itemDropMultiplier && rules.noItems) ||
+        (contract.modifiers && contract.modifiers.lifeAdd < 0 && rules.maxLives === 1 && rules.startingLives === 1);
+      button = global.document.createElement("button");
+      button.type = "button";
+      button.className = "button-secondary mini-toggle" + (active ? " is-selected" : "");
+      button.disabled = !!disabled || blocked || (!active && selected.length >= 2);
+      button.innerHTML = getIconMarkup(contract.iconId || "mode") + "<span>" + contract.name + "</span>";
+      button.title = blocked ? contract.description + " / 현재 모드에서는 적용되지 않습니다." : contract.description;
+      button.addEventListener("click", function () {
+        if (State.toggleRiskContract && State.toggleRiskContract(id)) {
+          playSound("confirm");
+          sync(State.getRunState());
+        } else {
+          playSound("error");
+        }
+      });
+      dom.lobbyRiskContracts.appendChild(button);
+    });
+  }
+
+  function renderDailyGoals(save) {
+    var dateKey = getLocalDateKey();
+    var rewards = save.dailyChallenge && save.dailyChallenge.rewards && save.dailyChallenge.rewards[dateKey] || {};
+    var completed = rewards.goals || {};
+
+    clearChildren(dom.lobbyDailyGoals);
+    (Data.DAILY_GOALS || []).forEach(function (goal) {
+      var chip = global.document.createElement("span");
+      chip.className = completed[goal.id] ? "summary-chip is-done" : "summary-chip";
+      chip.title = goal.description;
+      setText(chip, goal.name + (completed[goal.id] ? " 완료" : " +" + formatInteger(goal.reward)));
+      dom.lobbyDailyGoals.appendChild(chip);
+    });
+  }
+
   function renderLobby(state) {
     var save = state.persistent;
     var classData = getClassData(state);
@@ -1089,6 +1359,8 @@
     setText(dom.lobbyContinueInfo, getActiveRunText(activeRun));
     setHidden(dom.lobbyContinueInfo, !activeRun);
     setHidden(dom.newRunButton, !activeRun);
+    renderRiskContracts(save, !!activeRun);
+    renderDailyGoals(save);
   }
 
   function getNewAchievementText(state) {
@@ -1131,6 +1403,18 @@
         var data = Data.BUILD_ARCHETYPES && Data.BUILD_ARCHETYPES[entry.id];
         return data ? data.name : entry.id;
       }).join(", "));
+    }
+    if (Array.isArray(summary.riskContractIds) && summary.riskContractIds.length) {
+      parts.push("위험 계약 " + summary.riskContractIds.length + "개");
+    }
+    if (Array.isArray(summary.equipmentSetBonuses) && summary.equipmentSetBonuses.length) {
+      parts.push("장비 세트 " + summary.equipmentSetBonuses.map(function (id) {
+        var bonus = Data.EQUIPMENT_SET_BONUSES && Data.EQUIPMENT_SET_BONUSES[id];
+        return bonus ? bonus.name : id;
+      }).join(", "));
+    }
+    if (Array.isArray(summary.dailyGoalsCompleted) && summary.dailyGoalsCompleted.length) {
+      parts.push("오늘 목표 " + summary.dailyGoalsCompleted.length + "개");
     }
 
     return parts.join(" / ");
