@@ -41,7 +41,7 @@
 
       <section id="start-overlay" class="overlay" aria-label="로비">
         <div class="overlay-panel overlay-panel-wide">
-          <p class="overlay-kicker">Abyss Breaker v5.0.0</p>
+          <p class="overlay-kicker">Abyss Breaker v5.1.0</p>
           <h1>Abyss Breaker</h1>
           <dl class="result-list result-list-three">
             <div><dt>심연석</dt><dd id="lobby-stones">0</dd></div>
@@ -53,18 +53,45 @@
           </dl>
           <p id="lobby-continue-info" class="overlay-copy is-hidden"></p>
           <button id="new-run-button" type="button" class="button-secondary is-hidden">새로 시작</button>
-          <div class="overlay-actions lobby-actions">
+          <div id="lobby-risk-contracts" class="lobby-mini-panel" aria-label="위험 계약"></div>
+          <div id="lobby-daily-goals" class="lobby-mini-panel" aria-label="오늘 목표"></div>
+          <div class="lobby-menu-groups">
+            <div class="lobby-menu-group">
+              <span>플레이</span>
+              <div class="lobby-actions">
             <button id="start-button" type="button">시작</button>
             <button id="mode-button" type="button" class="button-secondary">게임 모드</button>
+              </div>
+            </div>
+            <div class="lobby-menu-group">
+              <span>성장</span>
+              <div class="lobby-actions">
             <button id="class-button" type="button" class="button-secondary">클래스</button>
             <button id="meta-button" type="button" class="button-secondary">영구 성장</button>
             <button id="equipment-button" type="button" class="button-secondary">장착</button>
             <button id="research-button" type="button" class="button-secondary">심연 연구소</button>
-            <button id="achievement-button" type="button" class="button-secondary">업적</button>
-            <button id="records-button" type="button" class="button-secondary">기록</button>
+              </div>
+            </div>
+            <div class="lobby-menu-group">
+              <span>수집</span>
+              <div class="lobby-actions">
             <button id="compendium-button" type="button" class="button-secondary">도감</button>
             <button id="cosmetics-button" type="button" class="button-secondary">외형</button>
+              </div>
+            </div>
+            <div class="lobby-menu-group">
+              <span>기록</span>
+              <div class="lobby-actions">
+            <button id="achievement-button" type="button" class="button-secondary">업적</button>
+            <button id="records-button" type="button" class="button-secondary">기록</button>
+              </div>
+            </div>
+            <div class="lobby-menu-group">
+              <span>설정</span>
+              <div class="lobby-actions">
             <button id="settings-button" type="button" class="button-secondary">설정</button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -163,7 +190,8 @@
         <div class="overlay-panel overlay-panel-wide">
           <p class="overlay-kicker">장착</p>
           <h2>장착</h2>
-          <div id="equipment-tabs" class="tab-row" aria-label="장착 프리셋"></div>
+          <div id="equipment-tabs" class="tab-row" aria-label="장착 분류"></div>
+          <div id="equipment-preset-tabs" class="tab-row" aria-label="장착 프리셋"></div>
           <p id="equipment-summary" class="overlay-copy"></p>
           <div id="equipment-recommendations" class="tab-row" aria-label="추천 장착"></div>
           <div id="equipment-content" class="upgrade-options scroll-panel" aria-live="polite"></div>
@@ -175,6 +203,7 @@
         <div class="overlay-panel overlay-panel-wide">
           <p class="overlay-kicker">심연 연구소</p>
           <h2>심연 연구소</h2>
+          <div id="research-tabs" class="tab-row" aria-label="연구소 분류"></div>
           <p id="research-summary" class="overlay-copy"></p>
           <div class="overlay-actions">
             <button id="core-pull-button" type="button" class="button-secondary">공 코어 1회</button>
