@@ -16,9 +16,9 @@
   }
 
   var Data = {
-    VERSION: "5.0.0",
-    SAVE_SCHEMA_VERSION: 8,
-    SAVE_KEY: "abyssBreaker.save.v8",
+    VERSION: "5.1.0",
+    SAVE_SCHEMA_VERSION: 9,
+    SAVE_KEY: "abyssBreaker.save.v9",
 
     MODES: {
       BOOT: "boot",
@@ -393,6 +393,42 @@
 
     GAME_MODE_ORDER: ["standard", "endless", "one_life", "no_items", "high_speed", "daily"],
 
+    RISK_CONTRACTS: {
+      fragile_vow: {
+        id: "fragile_vow",
+        name: "취약한 맹세",
+        description: "시작 생명 -1, 심연석 보상 +18%",
+        iconId: "life",
+        rewardMultiplier: 0.18,
+        disabledModes: ["one_life"],
+        modifiers: { lifeAdd: -1 }
+      },
+      haste_vow: {
+        id: "haste_vow",
+        name: "가속 맹세",
+        description: "공 속도 +8%, 심연석 보상 +12%",
+        iconId: "mode_high_speed",
+        rewardMultiplier: 0.12,
+        modifiers: { ballSpeedMultiplier: 1.08, ballMaxMultiplier: 1.08 }
+      },
+      hollow_vow: {
+        id: "hollow_vow",
+        name: "공허 맹세",
+        description: "아이템 드롭 -20%, 심연석 보상 +15%",
+        iconId: "item_bottom_barrier",
+        rewardMultiplier: 0.15,
+        disabledModes: ["no_items", "boss_rush"],
+        modifiers: { itemDropMultiplier: 0.8 }
+      }
+    },
+    RISK_CONTRACT_ORDER: ["fragile_vow", "haste_vow", "hollow_vow"],
+
+    DAILY_GOALS: [
+      { id: "stage_5", name: "5스테이지 도달", description: "오늘 한 런에서 5스테이지 이상 도달", reward: 4, metric: "highestStageReached", target: 5 },
+      { id: "weak_5", name: "약점 5회", description: "오늘 한 런에서 보스 약점 5회 타격", reward: 4, metric: "weakHits", target: 5 },
+      { id: "items_10", name: "아이템 10개", description: "오늘 한 런에서 아이템 10개 획득", reward: 4, metric: "itemsCollected", target: 10 }
+    ],
+
     ACHIEVEMENTS: [
       { id: "first_brick", name: "첫 파괴", description: "벽돌 1개 파괴", reward: 3 },
       { id: "first_gate", name: "첫 관문", description: "스테이지 1 클리어", reward: 5 },
@@ -478,6 +514,7 @@
       },
       tutorial: { completed: false, skipped: false },
       dailyChallenge: { lastDate: "", records: {}, rewards: {} },
+      selectedRiskContractIds: [],
       uiPreferences: { pictograms: true },
       metaUpgrades: { paddleWidth: 0, itemDrop: 0, bossDamage: 0, scoreBonus: 0, extraLife: 0 },
       achievements: {},
@@ -897,7 +934,7 @@
       first_strike_chip: { id: "first_strike_chip", name: "균열 타격 칩", grade: "common", chipType: "attack", description: "각 스테이지 첫 벽돌 타격 피해를 1 올립니다.", iconId: "chip_attack", tags: ["attack", "damage"], effectId: "firstBrickDamageBonus" },
       blast_chain_chip: { id: "blast_chain_chip", name: "연쇄 폭발 칩", grade: "rare", chipType: "attack", description: "폭발 연쇄 점수를 높입니다.", iconId: "chip_attack", tags: ["explosion", "attack"], effectId: "explosionScoreBonus" },
       weakness_hunter_chip: { id: "weakness_hunter_chip", name: "약점 추적 칩", grade: "rare", chipType: "boss", description: "보스 약점 피해를 높입니다.", iconId: "chip_boss", tags: ["boss", "weakness"], effectId: "bossWeaknessDamageBonus" },
-      barrier_chip: { id: "barrier_chip", name: "보호막 칩", grade: "common", chipType: "defense", description: "하단 보호막 지속시간을 늘립니다.", iconId: "chip_defense", tags: ["barrier", "defense"], effectId: "barrierDurationBonus" },
+      barrier_chip: { id: "barrier_chip", name: "보호막 칩", grade: "common", chipType: "defense", description: "하단 보호막 지속시간을 늘립니다.", iconId: "chip_defense", tags: ["barrier", "defense", "survival"], effectId: "barrierDurationBonus" },
       collector_chip: { id: "collector_chip", name: "수집 칩", grade: "common", chipType: "item", description: "아이템 드롭률을 조금 높입니다.", iconId: "chip_item", tags: ["item", "drop"], effectId: "itemDropBonus" },
       duration_chip: { id: "duration_chip", name: "지속 칩", grade: "rare", chipType: "item", description: "시간제 아이템 지속시간을 늘립니다.", iconId: "chip_item", tags: ["item", "duration"], effectId: "itemDurationBonus" },
       precision_chip: { id: "precision_chip", name: "정밀 칩", grade: "rare", chipType: "precision", description: "정밀 반사 다음 충돌 점수를 높입니다.", iconId: "chip_precision", tags: ["precision", "score"], effectId: "precisionScoreBonus" },
@@ -914,8 +951,15 @@
       precision: { id: "precision", name: "정밀형 추천", tags: ["precision", "score", "portal"] }
     };
     Data.RECOMMENDATION_ORDER = ["attack", "survival", "item", "precision"];
+    Data.EQUIPMENT_SET_BONUSES = {
+      attack: { id: "attack", name: "공격 세트", tag: "attack", threshold: 3, description: "공격 태그 장비 3개 장착 시 벽돌 피해 +1" },
+      item: { id: "item", name: "아이템 세트", tag: "item", threshold: 3, description: "아이템 태그 장비 3개 장착 시 드롭률과 지속시간 증가" },
+      precision: { id: "precision", name: "정밀 세트", tag: "precision", threshold: 3, description: "정밀 태그 장비 3개 장착 시 정밀 판정과 점수 증가" },
+      survival: { id: "survival", name: "생존 세트", tag: "survival", threshold: 2, description: "생존 태그 장비 2개 장착 시 시작 생명 +1" }
+    };
+    Data.EQUIPMENT_SET_BONUS_ORDER = ["attack", "item", "precision", "survival"];
 
-    Data.STORAGE_DEFAULTS.schemaVersion = 8;
+    Data.STORAGE_DEFAULTS.schemaVersion = 9;
     Data.STORAGE_DEFAULTS.equipment = {
       ownedCores: { default_ball_core: 1 },
       ownedBoards: { default_board_frame: 1 },
