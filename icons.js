@@ -12,7 +12,7 @@
     item_paddle_expand: '<path d="M4 15h16"/><path d="M8 11l-4 4 4 4"/><path d="M16 11l4 4-4 4"/><path d="M9 8h6"/>',
     item_multiball: '<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><circle cx="12" cy="16" r="3"/>',
     item_slow_ball: '<circle cx="12" cy="12" r="7"/><path d="M12 8v4l3 2"/><path d="M5 4l2 2M19 4l-2 2"/>',
-    item_magnetic_paddle: '<path d="M7 5v7a5 5 0 0 0 10 0V5"/><path d="M7 5h4M13 5h4"/><path d="M7 10h4M13 10h4"/><circle cx="12" cy="17" r="2"/>',
+    item_magnetic_paddle: '<path d="M5 18h14"/><path d="M8 15c2.5-2.8 5.5-2.8 8 0"/><circle cx="12" cy="7" r="3"/><path d="M12 10v4"/><path d="M8 11l-2 2M16 11l2 2"/>',
     item_laser_paddle: '<path d="M5 19h14"/><path d="M8 15l2-10"/><path d="M16 15L14 5"/><path d="M12 4v11"/>',
     item_bottom_barrier: '<path d="M4 18h16"/><path d="M6 15c3-2 9-2 12 0"/><circle cx="12" cy="9" r="3"/><path d="M9 6l-2-2M15 6l2-2"/>',
 
