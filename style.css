@@ -348,6 +348,54 @@ button:focus-visible {
   grid-column: 1 / -1;
 }
 
+.lobby-menu-groups {
+  display: grid;
+  gap: 8px;
+}
+
+.lobby-menu-group {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(190, 220, 224, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.lobby-menu-group > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.lobby-menu-group .lobby-actions button:first-child {
+  grid-column: auto;
+}
+
+#start-button {
+  grid-column: 1 / -1;
+}
+
+.lobby-mini-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mini-toggle {
+  width: auto;
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.mini-toggle.is-selected {
+  border-color: rgba(242, 201, 76, 0.62);
+  color: var(--yellow);
+}
+
 .result-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -389,7 +437,7 @@ button:focus-visible {
 
 .overlay-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 8px;
 }
 
@@ -526,6 +574,152 @@ button:focus-visible {
   color: var(--blue);
   font-size: 11px;
   font-weight: 900;
+}
+
+.compact-card {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 70px;
+  padding: 9px;
+  border: 1px solid rgba(101, 200, 255, 0.24);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(101, 200, 255, 0.08), rgba(12, 23, 29, 0.94)),
+    var(--button);
+  text-align: left;
+}
+
+.compact-card.is-selected {
+  border-color: rgba(242, 201, 76, 0.62);
+  background:
+    linear-gradient(180deg, rgba(242, 201, 76, 0.13), rgba(12, 23, 29, 0.94)),
+    var(--button);
+}
+
+.compact-card.is-locked {
+  opacity: 0.68;
+}
+
+.compact-card-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.compact-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.compact-card-header strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.compact-card-badges,
+.compact-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.grade-badge,
+.tag-pill,
+.equipped-badge,
+.status-badge,
+.summary-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.summary-chip.is-done {
+  border-color: rgba(49, 196, 135, 0.34);
+  color: var(--green);
+  background: rgba(49, 196, 135, 0.09);
+}
+
+.grade-badge {
+  border: 1px solid rgba(242, 201, 76, 0.32);
+  color: var(--yellow);
+  background: rgba(242, 201, 76, 0.08);
+}
+
+.tag-pill {
+  border: 1px solid rgba(145, 164, 173, 0.24);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.equipped-badge {
+  border: 1px solid rgba(49, 196, 135, 0.34);
+  color: var(--green);
+  background: rgba(49, 196, 135, 0.09);
+}
+
+.status-badge {
+  border: 1px solid rgba(101, 200, 255, 0.28);
+  color: var(--blue);
+  background: rgba(101, 200, 255, 0.08);
+}
+
+.summary-chip {
+  border: 1px solid rgba(101, 200, 255, 0.24);
+  color: var(--blue);
+  background: rgba(101, 200, 255, 0.07);
+}
+
+.compact-action {
+  width: auto;
+  min-width: 74px;
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 11px;
+}
+
+.compact-card-detail {
+  border-top: 1px solid rgba(190, 220, 224, 0.12);
+  padding-top: 4px;
+}
+
+.detail-toggle {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.compact-card-detail p,
+.empty-message {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.empty-message {
+  padding: 12px;
+  border: 1px solid rgba(190, 220, 224, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
 }
 
 .class-card.is-selected,
@@ -730,6 +924,14 @@ button:focus-visible {
   .tab-row,
   .lobby-actions {
     grid-template-columns: 1fr;
+  }
+
+  .compact-card {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .compact-action {
+    flex: 1 1 100%;
   }
 
   .lobby-actions button:first-child {
