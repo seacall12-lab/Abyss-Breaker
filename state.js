@@ -199,6 +199,40 @@
     return result;
   }
 
+  function riskContractExists(id) {
+    return !!(Data.RISK_CONTRACTS && Data.RISK_CONTRACTS[id]);
+  }
+
+  function isRiskContractAllowedForMode(contractId, modeId) {
+    var contract = Data.RISK_CONTRACTS && Data.RISK_CONTRACTS[contractId];
+    var mode = Data.GAME_MODES && Data.GAME_MODES[modeId];
+    var rules = mode && mode.rules || {};
+
+    if (!contract) {
+      return false;
+    }
+    if ((contract.disabledModes || []).indexOf(modeId) !== -1) {
+      return false;
+    }
+    if (contract.modifiers && contract.modifiers.itemDropMultiplier && rules.noItems) {
+      return false;
+    }
+    if (contract.modifiers && contract.modifiers.lifeAdd < 0 && rules.maxLives === 1 && rules.startingLives === 1) {
+      return false;
+    }
+    return true;
+  }
+
+  function sanitizeRiskContractIdsForMode(value, modeId) {
+    return sanitizeRiskContractIds(value).filter(function (id) {
+      return isRiskContractAllowedForMode(id, modeId);
+    });
+  }
+
+  function sanitizeRiskContractIds(value) {
+    return sanitizeIdList(value, riskContractExists, true).slice(0, 2);
+  }
+
   function sanitizeMetaUpgrades(value, defaults) {
     var result = clone(defaults.metaUpgrades);
 
@@ -780,6 +814,7 @@
       activeEvolutions: sanitizeEvolutionMap(value.activeEvolutions),
       evolutionCounters: sanitizeEvolutionCounters(value.evolutionCounters),
       runModifiers: isObject(value.runModifiers) ? clone(value.runModifiers) : {},
+      riskContractIds: sanitizeRiskContractIds(value.riskContractIds),
       rng: isObject(value.rng) ? { seed: nonNegativeInt(value.rng.seed, 0), state: nonNegativeInt(value.rng.state, 0), dailyDate: typeof value.rng.dailyDate === "string" ? value.rng.dailyDate : "" } : null,
       zoneId: typeof value.zoneId === "string" && Data.ZONES && Data.ZONES[value.zoneId] ? value.zoneId : null,
       relicCounters: sanitizeRelicCounters(value.relicCounters),
@@ -877,6 +912,7 @@
       settings: sanitizeSettings(value.settings, defaults),
       tutorial: sanitizeTutorial(value.tutorial, defaults),
       dailyChallenge: sanitizeDailyChallenge(value.dailyChallenge),
+      selectedRiskContractIds: sanitizeRiskContractIdsForMode(value.selectedRiskContractIds || defaults.selectedRiskContractIds, selectedGameModeId),
       uiPreferences: isObject(value.uiPreferences) ? { pictograms: value.uiPreferences.pictograms !== false } : clone(defaults.uiPreferences),
       activeRun: null
     };
@@ -898,6 +934,7 @@
       var fromCurrentKey = !!raw;
 
       raw = raw ||
+        storage.getItem("abyssBreaker.save.v8") ||
         storage.getItem("abyssBreaker.save.v7") ||
         storage.getItem("abyssBreaker.save.v6") ||
         storage.getItem("abyssBreaker.save.v5") ||
@@ -1050,6 +1087,7 @@
       },
       evolutionStageFlags: {},
       runModifiers: {},
+      riskContractIds: [],
       endgameMode: "",
       activeMutationIds: [],
       buildScores: {},
@@ -1225,6 +1263,7 @@
       activeEvolutions: clone(state.activeEvolutions || {}),
       evolutionCounters: clone(state.evolutionCounters || {}),
       runModifiers: clone(state.runModifiers || {}),
+      riskContractIds: sanitizeRiskContractIds(state.riskContractIds || (save.selectedRiskContractIds || [])),
       rng: state.rng ? clone(state.rng) : null,
       zoneId: state.zoneId || null,
       relicCounters: clone(state.relicCounters || {}),
@@ -1402,6 +1441,39 @@
     }
 
     state.persistent.selectedGameModeId = modeId;
+    state.persistent.selectedRiskContractIds = sanitizeRiskContractIdsForMode(state.persistent.selectedRiskContractIds, modeId);
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function toggleRiskContract(contractId) {
+    var state = getRunState();
+    var selected = sanitizeRiskContractIds(state.persistent.selectedRiskContractIds);
+    var index = selected.indexOf(contractId);
+
+    if (!riskContractExists(contractId) || !isRiskContractAllowedForMode(contractId, state.persistent.selectedGameModeId)) {
+      return false;
+    }
+    if (index !== -1) {
+      selected.splice(index, 1);
+    } else {
+      if (selected.length >= 2) {
+        return false;
+      }
+      selected.push(contractId);
+    }
+    state.persistent.selectedRiskContractIds = selected;
+    replacePersistent(state.persistent);
+    return true;
+  }
+
+  function clearRiskContracts() {
+    var state = getRunState();
+
+    if (!state.persistent.selectedRiskContractIds || !state.persistent.selectedRiskContractIds.length) {
+      return false;
+    }
+    state.persistent.selectedRiskContractIds = [];
     replacePersistent(state.persistent);
     return true;
   }
@@ -1569,6 +1641,66 @@
     };
   }
 
+  function getAppliedEquipmentItems(save) {
+    var equipment = getAppliedEquipment(save);
+    var items = [
+      getEquipmentById("core", equipment.coreId),
+      getEquipmentById("board", equipment.boardId)
+    ];
+
+    (equipment.coreChipIds || []).forEach(function (id) {
+      items.push(getEquipmentById("chip", id));
+    });
+    (equipment.boardChipIds || []).forEach(function (id) {
+      items.push(getEquipmentById("chip", id));
+    });
+    return items.filter(Boolean);
+  }
+
+  function getEquipmentEffectSummary(save) {
+    var effectNames = {
+      laserCooldownBonus: "레이저 쿨다운",
+      barrierDurabilityBonus: "보호막 내구도",
+      firstBrickDamageBonus: "첫 타격 피해",
+      bossWeaknessDamageBonus: "보스 약점 피해",
+      itemDropBonus: "아이템 드롭",
+      itemDurationBonus: "아이템 지속",
+      precisionScoreBonus: "정밀 점수",
+      portalScoreBonus: "포털 점수",
+      splitOrbBonus: "분열 시작",
+      tuningBoardBonus: "정밀 판정",
+      pierceScoreBonus: "관통 점수",
+      blastRadiusBonus: "폭발 연쇄",
+      firstEvolutionDamageBonus: "진화 후 피해",
+      lowLifePaddleBonus: "저생명 패들",
+      magnetDurationBonus: "자석 지속",
+      explosionScoreBonus: "폭발 점수"
+    };
+    var items = getAppliedEquipmentItems(save);
+    var effectCounts = {};
+    var tagCounts = {};
+    var summary = [];
+
+    items.forEach(function (item) {
+      if (item.effectId && item.effectId !== "none") {
+        effectCounts[item.effectId] = (effectCounts[item.effectId] || 0) + 1;
+      }
+      (item.tags || []).forEach(function (tag) {
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+      });
+    });
+    Object.keys(effectCounts).forEach(function (effectId) {
+      summary.push((effectNames[effectId] || effectId) + " x" + effectCounts[effectId]);
+    });
+    (Data.EQUIPMENT_SET_BONUS_ORDER || []).forEach(function (bonusId) {
+      var bonus = Data.EQUIPMENT_SET_BONUSES && Data.EQUIPMENT_SET_BONUSES[bonusId];
+      if (bonus && (tagCounts[bonus.tag] || 0) >= Math.max(1, bonus.threshold || 3)) {
+        summary.push(bonus.name);
+      }
+    });
+    return summary;
+  }
+
   function getOwnedMap(save, kind) {
     var equipment = save && save.equipment || {};
     if (kind === "core") {
@@ -1645,6 +1777,9 @@
     var list = preset[listName] || [];
 
     if (!chip || countOwned(save.equipment.ownedChips, chipId) <= 0 || allowed.indexOf(chip.chipType) === -1 || list.indexOf(chipId) !== -1) {
+      return false;
+    }
+    if ((preset.coreChipIds || []).indexOf(chipId) !== -1 || (preset.boardChipIds || []).indexOf(chipId) !== -1) {
       return false;
     }
     if (list.length >= Math.max(0, host && host.slotCount || 0)) {
@@ -1770,7 +1905,7 @@
     var results = [];
 
     if (!costTable || save.abyssStones < cost) {
-      return { ok: false, message: "자연석이 부족합니다.", results: [] };
+      return { ok: false, message: "심연석이 부족합니다.", results: [] };
     }
     save.abyssStones -= cost;
     for (var index = 0; index < pulls; index++) {
@@ -1847,7 +1982,9 @@
     preset.coreId = coreId;
     preset.boardId = boardId;
     preset.coreChipIds = sanitizeChipList(chips, save.equipment.ownedChips, Data.CORE_CHIP_TYPES || [], getEquipmentById("core", coreId).slotCount);
-    preset.boardChipIds = sanitizeChipList(chips, save.equipment.ownedChips, Data.BOARD_CHIP_TYPES || [], getEquipmentById("board", boardId).slotCount);
+    preset.boardChipIds = sanitizeChipList(chips.filter(function (id) {
+      return preset.coreChipIds.indexOf(id) === -1;
+    }), save.equipment.ownedChips, Data.BOARD_CHIP_TYPES || [], getEquipmentById("board", boardId).slotCount);
     replacePersistent(save);
     return true;
   }
@@ -1969,6 +2106,8 @@
     syncClassUnlocks: syncClassUnlocks,
     selectClass: selectClass,
     selectGameMode: selectGameMode,
+    toggleRiskContract: toggleRiskContract,
+    clearRiskContracts: clearRiskContracts,
     unlockAllModes: unlockAllModes,
     unlockAchievement: unlockAchievement,
     discover: discover,
@@ -1978,6 +2117,7 @@
     selectEmblem: selectEmblem,
     getEquipmentById: getEquipmentById,
     getAppliedEquipment: getAppliedEquipment,
+    getEquipmentEffectSummary: getEquipmentEffectSummary,
     selectEquipmentPreset: selectEquipmentPreset,
     equipCore: equipCore,
     equipBoard: equipBoard,
